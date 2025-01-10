@@ -1,0 +1,77 @@
+"""Test script for the DevOps agent workflow."""
+
+import os
+import json
+from pathlib import Path
+from dotenv import load_dotenv
+from forge.forge_wrapper import ForgeWrapper
+from devops_agent import start_devops_agent
+from pipeline import SubprocessHandler
+from plan_manager import load_plan
+
+def test_devops_agent():
+    """Test the DevOps agent with an existing plan and system maps."""
+    # Load environment variables
+    load_dotenv()
+    
+    # Get repo path from environment
+    repo_path = os.getenv('LOCAL_CLONE_PATH')
+    if not repo_path:
+        raise ValueError("LOCAL_CLONE_PATH environment variable not set")
+    repo_path = Path(repo_path)
+    
+    # Load system maps from JSON
+    with open("pipelinev2/system_maps/system_map.json", "r") as f:
+        system_map = json.load(f)
+        
+    # Extract required information
+    codebase_overview = system_map["repository_overview"]
+    file_tree = json.dumps(system_map["file_tree"], indent=2)
+    file_analyses = system_map["file_analyses"]
+    
+    # Initialize tools
+    subprocess_handler = SubprocessHandler(repo_path)
+    forge = ForgeWrapper()
+    plan_steps = load_plan(repo_path)
+    
+    # Run DevOps agent
+    try:
+        print("\n=== Starting DevOps Agent Test ===")
+        result = start_devops_agent(
+            plan_steps=plan_steps,
+            repo_path=str(repo_path),
+            codebase_overview=codebase_overview,
+            file_tree=file_tree,
+            subprocess_handler=subprocess_handler,
+            forge=forge
+        )
+        
+        # Print results
+        print("\n=== Execution Results ===")
+        print(f"Completed Steps: {len(result['completed_steps'])}")
+        print(f"Total Attempts: {result['total_attempts']}")
+        print(f"Log File: {result['log_file']}")
+        
+        # Print step details
+        print("\nStep Details:")
+        for i, step in enumerate(result['completed_steps'], 1):
+            print(f"\nStep {i}:")
+            print(f"Description: {step['description']}")
+            print(f"Status: {step['status']}")
+            if 'summary' in step:
+                print(f"Summary: {step['summary'].get('summary', 'No summary available')}")
+            if step.get('error'):
+                print(f"Error: {step['error']}")
+        
+        # Print log file contents if requested
+        if os.environ.get('SHOW_LOGS', '').lower() == 'true':
+            print("\n=== Log File Contents ===")
+            with open(result['log_file'], 'r', encoding='utf-8') as f:
+                print(f.read())
+                
+    except Exception as e:
+        print(f"\nError during execution: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    test_devops_agent() 
