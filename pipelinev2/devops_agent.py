@@ -272,9 +272,7 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     # Potentially add files to forge context
     if current_step.files:
         for fpath in current_step.files:
-            fullp = os.path.join(state["current_directory"], fpath)
-            if os.path.exists(fullp):
-                state["forge"].add_file(fullp)
+            state["forge"].add_file(fpath)
     
     # Format context
     exec_history = format_knowledge_sequence(state["knowledge_sequence"], current_step.description)
@@ -284,11 +282,8 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     # Attempt to gather file contents
     file_contents = {}
     if state["forge"] and current_step.files:
-        try:
-            file_contents = state["forge"].get_file_contents()
-        except Exception as ex:
-            logger.warning(f"Unable to load file contents: {ex}")
-    
+        file_contents = state["forge"].get_file_contents()
+
     codebase_context = f"""Overview:
 {state['codebase_overview']}
 
@@ -387,6 +382,7 @@ def initialize_tools(state: DevOpsState) -> DevOpsTools:
             "available_tools": [
                 "execute_command",
                 "execute_code",
+                "retrieve_documentation"
                 "ask_human",
                 "run_file",
                 "validate_output",
@@ -422,8 +418,9 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
     tool_map = {
         "modify_code": "modify_code",
         "execute_command": "execute_command",
-        "documentation": "retrieve_documentation",
-        "ask_human": "ask_human",
+        "retrieve_documentation": "retrieve_documentation",
+        "ask_human_for_information": "ask_human_for_information",
+        "ask_human_for_intervention": "ask_human_for_intervention",
         "run_file": "run_file",
         "validate_output": "validate_output",
         "validate_code_changes": "validate_code_changes",
@@ -451,8 +448,10 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
         inputs["command"] = decision.content
     elif decision.type == "retrieve_documentation":
         inputs["query"] = decision.content
-    elif decision.type == "ask_human":
+    elif decision.type == "ask_human_for_information":
         inputs["question"] = decision.content
+    elif decision.type == "ask_human_for_intervention":
+        inputs["explanation"] = decision.content
     elif decision.type == "run_file":
         inputs["file_path"] = decision.content
     elif decision.type == "validate_output":

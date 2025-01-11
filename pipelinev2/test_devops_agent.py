@@ -32,7 +32,7 @@ def test_devops_agent():
     subprocess_handler = SubprocessHandler(repo_path)
     
     forge = ForgeWrapper(
-            auto_commit = True,
+            auto_commit = False,
             git_root = str(repo_path)
     )
     

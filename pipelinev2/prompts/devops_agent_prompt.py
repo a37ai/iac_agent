@@ -32,9 +32,15 @@ execute_command:
 retrieve_documentation:
 - Required: query (str)
 - Optional: domain_filter (List[str])
+* Use this when you need to retrieve documentation or relevant information by searching the web. 
 
-ask_human:
+ask_human_for_information:
 - Required: question (str)
+* Use this when you need specific information from a human. This tool will carry out the process of asking and getting an answer from the human. Use then when you need credentials, or dont have the information you need and cannot get it from the web using the retrieve_documentation tool.
+
+ask_human_for_intervention:
+- Required: explanation (str)
+* Use this when you need a human to perform an action or intervention. For example, if you need them to sign into something for you, or are stuck on an error. 
 
 run_file:
 - Required: file_path (str)

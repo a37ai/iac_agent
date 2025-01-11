@@ -331,3 +331,54 @@ Actual:
 
 """
         return self._llm_validation_check(prompt_text)
+
+def retrieve_documentation(query: str) -> Dict[str, Any]:
+    """
+    Retrieve documentation or relevant information using the Perplexity API.
+
+    :param query: The query string for which to retrieve documentation.
+    :return: A dictionary containing the API response.
+    """
+    api_token = os.getenv("PERPLEXITY_API_TOKEN")  # Load the token from the environment
+
+    if not api_token:
+        return {"error": "API token not found in environment variables."}
+
+    api_url = "https://api.perplexity.ai/chat/completions"  # Fixed API URL
+
+    payload = {
+        "model": "llama-3.1-sonar-small-128k-online",
+        "messages": [
+            {
+                "role": "system",
+                "content": "Be precise and concise."
+            },
+            {
+                "role": "user",
+                "content": query
+            }
+        ],
+        "max_tokens": "Optional",
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "search_domain_filter": ["perplexity.ai"],
+        "return_images": False,
+        "return_related_questions": False,
+        "search_recency_filter": "month",
+        "top_k": 0,
+        "stream": False,
+        "presence_penalty": 0,
+        "frequency_penalty": 1
+    }
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(api_url, json=payload, headers=headers)
+        response.raise_for_status()  # Raise an error for bad responses
+        return response.json()  # Return the JSON response
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
