@@ -14,14 +14,13 @@ def test_devops_agent():
     # Load environment variables
     load_dotenv()
     
-    # Get repo path from environment
-    repo_path = os.getenv('LOCAL_CLONE_PATH')
-    if not repo_path:
-        raise ValueError("LOCAL_CLONE_PATH environment variable not set")
-    repo_path = Path(repo_path)
+    # Get workspace root path
+    workspace_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_path = workspace_root / "pipelinev2" / "test_repos"
     
-    # Load system maps from JSON
-    with open("pipelinev2/system_maps/system_map.json", "r") as f:
+    # Load system maps from JSON using absolute path
+    system_maps_path = workspace_root / "pipelinev2" / "system_maps" / "system_map.json"
+    with open(system_maps_path, "r") as f:
         system_map = json.load(f)
         
     # Extract required information
@@ -29,10 +28,32 @@ def test_devops_agent():
     file_tree = json.dumps(system_map["file_tree"], indent=2)
     file_analyses = system_map["file_analyses"]
     
-    # Initialize tools
+    # Initialize tools with absolute path
     subprocess_handler = SubprocessHandler(repo_path)
-    forge = ForgeWrapper()
+    
+    forge = ForgeWrapper(
+            auto_commit = True,
+            git_root = str(repo_path)
+    )
+    
+    # Load plan and ensure all paths are absolute
     plan_steps = load_plan(repo_path)
+    
+    # Determine the working directory from the first file in the plan
+    working_dir = None
+    for step in plan_steps:
+        if step.files:
+            # Get the directory of the first file
+            first_file = Path(step.files[0])
+            if first_file.is_absolute():
+                working_dir = str(first_file.parent)
+            else:
+                working_dir = str((repo_path / first_file).parent)
+            break
+    
+    # If we found a working directory, update the subprocess handler
+    if working_dir:
+        subprocess_handler = SubprocessHandler(working_dir)
     
     # Run DevOps agent
     try:

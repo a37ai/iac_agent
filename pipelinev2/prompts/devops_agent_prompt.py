@@ -21,7 +21,7 @@ Credentials:
 
 Available Tools (with required/optional arguments):
 
-execute_code:
+modify_code:
 - Required: code (str), instructions (str)
 - Optional: cwd (str)
 
@@ -69,7 +69,7 @@ If you have no more actions to take, you may indicate type="end" and set content
 You must respond with this flat JSON schema (no 'action' object). Example schema:
 
 {{
-    "type": str,         # e.g. "command", "code", "documentation", "end", etc.
+    "type": str,         # One of the available tools. Use the exact tool name. 
     "description": str,  # Explanation of the chosen action or reason for ending
     "content": str,      # The exact code, command, or other content to execute (or empty if end)
     "reasoning": str     # Explanation of why you chose this action
@@ -77,7 +77,7 @@ You must respond with this flat JSON schema (no 'action' object). Example schema
 
 **Example**: (if you want to run Terraform init)
 {{
-    "type": "command",
+    "type": "execute_command",
     "description": "Initialize Terraform in the infra folder",
     "content": "terraform init",
     "reasoning": "We need to set up Terraform backend before applying changes."

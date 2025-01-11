@@ -28,46 +28,53 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class SubprocessHandler:
-    def __init__(self, repo_path: Path):
-        self.repo_path = repo_path
-        self.current_env = os.environ.copy()
-        
-    def execute_command(self, command: str, timeout: int = 300) -> Dict[str, Any]:
-        """Execute a command and return the result."""
+    """Handle subprocess execution with proper error handling and logging."""
+    
+    def __init__(self, working_directory: str):
+        """Initialize with working directory."""
+        self.working_directory = Path(working_directory).resolve()
+    
+    def execute_command(self, command: str, timeout: Optional[int] = None) -> Dict[str, str]:
+        """Execute a shell command and return the result."""
         try:
+            # Ensure working directory exists
+            if not self.working_directory.exists():
+                return {
+                    'status': 'error',
+                    'stderr': f'Working directory does not exist: {self.working_directory}'
+                }
+            
+            # Execute command in working directory
             result = subprocess.run(
                 command,
                 shell=True,
-                cwd=str(self.repo_path.resolve()),
-                env=self.current_env,
+                cwd=str(self.working_directory),
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout if timeout else 300
             )
+            
+            if result.returncode == 0:
+                return {
+                    'status': 'success',
+                    'stdout': result.stdout
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'stderr': result.stderr
+                }
+                
+        except subprocess.TimeoutExpired:
             return {
-                'stdout': result.stdout,
-                'stderr': result.stderr,
-                'status': 'success' if result.returncode == 0 else 'error',
-                'return_code': result.returncode
-            }
-        except subprocess.TimeoutExpired as e:
-            return {
-                'stdout': '',
-                'stderr': f'Command timed out after {timeout} seconds',
-                'status': 'timeout',
-                'return_code': -1
+                'status': 'error',
+                'stderr': f'Command timed out after {timeout} seconds'
             }
         except Exception as e:
             return {
-                'stdout': '',
-                'stderr': str(e),
                 'status': 'error',
-                'return_code': -1
+                'stderr': str(e)
             }
-            
-    def update_environment(self, env_vars: Dict[str, str]):
-        """Update subprocess environment variables."""
-        self.current_env.update(env_vars)
 
 class Pipeline:
     def __init__(self, repo_path: str):
@@ -87,7 +94,10 @@ class Pipeline:
     def initialize_forge(self):
         """Initialize the forge wrapper."""
         if not self.forge:
-            self.forge = ForgeWrapper()
+            self.forge = ForgeWrapper(
+                auto_commit = True,
+                git_root = str(self.test_repos_path)
+            )
             
     def map_system(self) -> Dict:
         """Map the system using SystemMapper and save the result."""

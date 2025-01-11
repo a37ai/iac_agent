@@ -146,7 +146,7 @@ class DevOpsState(TypedDict):
 def format_knowledge_sequence(knowledge_sequence: List[Dict], step_description: str) -> str:
     """Convert the knowledge_sequence (tool calls + outcomes) into text."""
     if not knowledge_sequence:
-        return "No execution history for this step."
+        return "No tool calls or outcomes for this step yet. This is the first time we're seeing this step."
     
     text = f"Current Step: {step_description}\n\n"
     for i, entry in enumerate(knowledge_sequence, 1):
@@ -181,9 +181,14 @@ def format_completed_steps(completed_steps: List[Dict]) -> str:
 ##############################################################################
 
 def format_step_knowledge(knowledge_sequence: List[Dict], step_description: str) -> str:
-    text = f"Step Description: {step_description}\n\n"
+    """Convert the knowledge_sequence (tool calls + outcomes) into text."""
+    if not knowledge_sequence:
+        return "No execution history for this step."
+    
+    text = f"Current Step: {step_description}\n\n"
     for i, entry in enumerate(knowledge_sequence, 1):
-        text += f"Tool Call {i}: {entry['action_type']}\n"
+        text += f"Action {i}:\n"
+        text += f"Type: {entry['action_type']}\n"
         text += f"Input: {entry['action']}\n"
         text += f"Result: {entry['result']['status']}\n"
         if entry['result'].get('output'):
@@ -213,23 +218,40 @@ def summarize_step_knowledge(knowledge_sequence: List[Dict], step_description: s
 Execution History:
 {step_data}
 
-Provide a JSON object:
+Provide a concise summary in this exact JSON format:
 {{
-  "summary": "What was done?",
-  "key_learnings": [],
-  "relevant_for_future": []
-}}
-""",
+  "summary": "Brief description of what was done",
+  "key_learnings": ["List of key things learned"],
+  "relevant_for_future": ["List of points relevant for future steps"]
+}}""",
         input_variables=["step_data"]
     )
+    
     try:
         llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
         response = llm.invoke(prompt.format(step_data=text_data))
-        return json.loads(response.content)
+        
+        # Try to parse JSON response
+        try:
+            return json.loads(response.content)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, try to extract JSON block
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response.content)
+            if json_match:
+                return json.loads(json_match.group(0))
+            else:
+                # If all parsing fails, return a default summary
+                logger.warning(f"Failed to parse summary response: {response.content}")
+                return {
+                    "summary": "Step completed but summary generation failed",
+                    "key_learnings": [],
+                    "relevant_for_future": []
+                }
     except Exception as e:
         logger.warning(f"Error summarizing step: {e}")
         return {
-            "summary": f"Executed {len(knowledge_sequence)} actions",
+            "summary": "Step completed but summary generation failed",
             "key_learnings": [],
             "relevant_for_future": []
         }
@@ -243,10 +265,12 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     Query the LLM about what to do for the current step.
     If LLM says 'end', we end this step right away in the route function.
     """
+    
     current_step = state["plan_steps"][state["current_step_index"]]
 
+    print(f"Current step: {current_step}")
     # Potentially add files to forge context
-    if state["forge"]:
+    if current_step.files:
         for fpath in current_step.files:
             fullp = os.path.join(state["current_directory"], fpath)
             if os.path.exists(fullp):
@@ -305,6 +329,45 @@ Relevant Files:
         
         state["current_step_context"]["last_decision"] = decision.dict()
         state["total_attempts"] += 1
+
+        
+        decision = LLMDecision(**decision.dict())
+        
+        # If LLM says "end" or "none", finalize current step
+        if decision.type in ["end", "none"]:
+            logger.info(f"LLM said '{decision.type}' => finalizing current step")
+            
+            # Summarize what was done so far
+            step_summary = summarize_step_knowledge(
+                state["knowledge_sequence"],
+                state["plan_steps"][state["current_step_index"]].description
+            )
+            
+            # Mark step as completed
+            forced_step_info = {
+                "description": state["plan_steps"][state["current_step_index"]].description,
+                "status": "completed",
+                "summary": step_summary,
+                "result": {"status": "forced_end"},
+                "tool_used": "none",
+                "timestamp": datetime.now().isoformat()
+            }
+            state["completed_steps"].append(forced_step_info)
+            
+            # Move to the next step
+            state["current_step_index"] += 1
+            
+            # Reset step state completely to ensure fresh context
+            state["current_step_attempts"] = 0
+            state["current_step_context"] = {}  # Clear last decision
+            state["knowledge_sequence"] = []
+            
+            # If that was the last step, end workflow
+            if state["current_step_index"] >= len(state["plan_steps"]):
+                logger.info("No more steps remain after LLM ended the step.")
+                return "end"
+
+
         return state
     except Exception as exc:
         logger.error(f"Error in get_next_action: {exc}")
@@ -354,16 +417,11 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
         "reasoning": decision.reasoning
     })
     
-    # If type is 'end', do nothing special here. We'll finalize in route_to_tool_or_end.
-    if decision.type == "end" or decision.type == "none":
-        print("[INFO] LLM said end/none. Nothing to do. We'll finalize in route_to_tool_or_end.")
-        return state
-    
-    # Otherwise, run the selected tool
+        # Otherwise, run the selected tool
     tools = initialize_tools(state)
     tool_map = {
-        "code": "execute_code",
-        "command": "execute_command",
+        "modify_code": "modify_code",
+        "execute_command": "execute_command",
         "documentation": "retrieve_documentation",
         "ask_human": "ask_human",
         "run_file": "run_file",
@@ -386,12 +444,12 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
     
     # Build tool inputs
     inputs = {}
-    if decision.type == "code":
+    if decision.type == "modify_code":
         inputs["code"] = decision.content
         inputs["instructions"] = decision.description
-    elif decision.type == "command":
+    elif decision.type == "execute_command":
         inputs["command"] = decision.content
-    elif decision.type == "documentation":
+    elif decision.type == "retrieve_documentation":
         inputs["query"] = decision.content
     elif decision.type == "ask_human":
         inputs["question"] = decision.content
@@ -442,13 +500,8 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
             "tool_result": res.dict(),
             "knowledge_update": knowledge_update
         })
-        
-        # If success => we do NOT forcibly finalize. The LLM decides if more is needed or end.
-        if res.status != "success":
-            state["current_step_attempts"] += 1
-        else:
-            # success => Attempt is 0 again
-            pass
+
+        state["current_step_attempts"] += 1
 
     except Exception as ex:
         logger.error(f"Error executing tool {decision.type}: {ex}")
@@ -463,94 +516,24 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
     
     return state
 
-def route_to_tool_or_end(state: DevOpsState) -> Literal["execute_tool", "end"]:
+def route_to_tool_or_end(state: DevOpsState) -> Literal["execute_tool", "end", "next_step"]:
     """
     Decide if we are done or not. If LLM says 'end', forcibly finalize the current step and move to next.
     If no more steps, end entire workflow.
     """
-    if state["current_step_attempts"] >= 3:
-        logger.warning("Max step attempts reached. Ending.")
-        return "end"
-    
-    if state["total_attempts"] >= 15:
-        logger.warning("Max total attempts reached. Ending.")
-        return "end"
-    
-    # If all steps done, end
-    if state["current_step_index"] >= len(state["plan_steps"]):
-        logger.info("All steps done. Ending workflow.")
-        return "end"
     
     # Inspect the LLM's last decision
-    decision_data = state["current_step_context"].get("last_decision", {})
-    if not decision_data:
-        logger.info("No last decision. Ending workflow.")
+
+    if state["current_step_index"] >= len(state["plan_steps"]):
+        logger.info("No more steps remain after LLM ended the step.")
         return "end"
     
-    decision = LLMDecision(**decision_data)
-    # If LLM says "end", forcibly finalize this step, then proceed
-    if decision.type == "end":
-        logger.info("LLM said 'end' => forcibly finalize current step, move on.")
-        
-        # Summarize what was done so far
-        step_summary = summarize_step_knowledge(
-            state["knowledge_sequence"],
-            state["plan_steps"][state["current_step_index"]].description
-        )
-        
-        # Mark step as completed
-        forced_step_info = {
-            "description": state["plan_steps"][state["current_step_index"]].description,
-            "status": "completed",
-            "summary": step_summary,
-            "result": {"status": "forced_end"},
-            "tool_used": "none",
-            "timestamp": datetime.now().isoformat()
-        }
-        state["completed_steps"].append(forced_step_info)
-        
-        # Move to the next step
-        state["current_step_index"] += 1
-        state["current_step_attempts"] = 0
-        state["current_step_context"] = {}
-        state["knowledge_sequence"] = []
-        
-        # If that was the last step, end. Otherwise, keep going.
-        if state["current_step_index"] >= len(state["plan_steps"]):
-            logger.info("No more steps remain after LLM ended the step.")
-            return "end"
-        else:
-            # We have more steps => loop back => get_next_action
-            logger.info("Moving on to next step.")
-            return "execute_tool"
-    
-    # If "none" => end as well (similar)
-    if decision.type == "none":
-        logger.info("LLM returned 'none' => forcibly finalize step, next step or end.")
-        step_summary = summarize_step_knowledge(
-            state["knowledge_sequence"],
-            state["plan_steps"][state["current_step_index"]].description
-        )
-        state["completed_steps"].append({
-            "description": state["plan_steps"][state["current_step_index"]].description,
-            "status": "completed",
-            "summary": step_summary,
-            "result": {"status": "forced_end"},
-            "tool_used": "none",
-            "timestamp": datetime.now().isoformat()
-        })
-        state["current_step_index"] += 1
-        state["current_step_attempts"] = 0
-        state["current_step_context"] = {}
-        state["knowledge_sequence"] = []
-        
-        if state["current_step_index"] >= len(state["plan_steps"]):
-            logger.info("No more steps remain after LLM said 'none'.")
-            return "end"
-        else:
-            return "execute_tool"
-    
-    # Otherwise => we do normal tool execution
+    decision_data = state["current_step_context"].get("last_decision", {})
+
+    if not decision_data:
+        logger.info("No last decision. Ending workflow.")
+        return "next_step"
+
     return "execute_tool"
 
 def create_devops_workflow() -> StateGraph:
@@ -562,17 +545,22 @@ def create_devops_workflow() -> StateGraph:
     workflow.add_node("get_next_action", get_next_action)
     workflow.add_node("execute_tool", execute_tool)
     
+    # After get_next_action, route based on decision
     workflow.add_conditional_edges(
         "get_next_action",
         route_to_tool_or_end,
         {
             "execute_tool": "execute_tool",
+            "next_step": "get_next_action",
             "end": END
         }
     )
-    # After execute_tool => back to get_next_action
+    
+    # After execute_tool, always go back to get_next_action
+    # This ensures we get fresh context for each step
     workflow.add_edge("execute_tool", "get_next_action")
     
+    # Set entry point
     workflow.set_entry_point("get_next_action")
     return workflow.compile()
 

@@ -155,7 +155,7 @@ class SystemMapper:
             raise
 
     def generate_file_tree(self, path: Optional[Path] = None) -> Dict:
-        """Generate a hierarchical file tree structure."""
+        """Generate a hierarchical file tree structure with absolute paths."""
         if path is None:
             path = self.local_path
 
@@ -178,10 +178,11 @@ class SystemMapper:
                 (item.is_file() and item.name in {'plan.json', 'plan.txt'})):
                 continue
                 
+            abs_path = str(item.resolve())  # Get absolute path
             if item.is_file():
-                tree[item.name] = 'file'
+                tree[abs_path] = 'file'
             elif item.is_dir():
-                tree[item.name] = self.generate_file_tree(item)
+                tree[abs_path] = self.generate_file_tree(item)
         
         return tree
 
