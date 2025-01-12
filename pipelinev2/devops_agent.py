@@ -157,20 +157,22 @@ def generate_quick_summary_from_decision(decision: "LLMDecision") -> (str, str):
         safe_description = str(decision.description).replace("{", "{{").replace("}", "}}")
         safe_reasoning = str(decision.reasoning).replace("{", "{{").replace("}", "}}")
 
-        prompt_text = f"""Given this DevOps Agent decision, provide a concise JSON with:
-1. tagline: 5-7 word summary of the action. It must be "creative", meaning that it shouldnt just be "Executing modify_code" or "Step Completed". It should be something that is more interesting and descriptive.
-2. summary: two to three descriptive sentences explaining what will be done and why
+        prompt_text = f"""
+                        Given this DevOps Agent decision, provide a concise JSON with:
+                        1. tagline: 5-7 word summary of the action. It must be descriptive but professional, meaning that it shouldnt just be "Executing modify_code" or "Step Completed". It should be something that is more interesting and descriptive.
+                        2. summary: two to three descriptive sentences explaining what will be done and why
 
-Decision Type: {decision.type}
-Description: {safe_description}
-Content: {safe_content}
-Reasoning: {safe_reasoning}
+                        Decision Type: {decision.type}
+                        Description: {safe_description}
+                        Content: {safe_content}
+                        Reasoning: {safe_reasoning}
 
-Respond with ONLY a JSON object (no markdown, no backticks):
-{{
-  "tagline": "short sentence",
-  "summary": "two sentences"
-}}"""
+                        Respond with ONLY a JSON object (no markdown, no backticks):
+                        {{
+                        "tagline": "short sentence",
+                        "summary": "two sentences"
+                        }}
+                    """
 
         response = llm.invoke(prompt_text)
         try:
