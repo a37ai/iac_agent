@@ -23,20 +23,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global variable to store the execution log file path
+# Global variables to store the execution log file paths
 EXECUTION_LOG_FILE = None
+STATUS_LOG_FILE = None
+
+##############################################################################
+#                         Logging Setup
+##############################################################################
 
 def initialize_logging(state: Dict[str, Any]) -> str:
-    """Initialize logging for a new execution."""
-    global EXECUTION_LOG_FILE
+    """Initialize logging for a new execution, creating both a full log and a separate status log."""
+    global EXECUTION_LOG_FILE, STATUS_LOG_FILE
     
-    log_dir = os.path.join(state["current_directory"], "logs", "devops_agent")
+    # Get the directory where test_repos is located
+    test_repos_parent = Path(state["current_directory"]).parent / "test_repos"
+    if test_repos_parent.exists():
+        log_dir = test_repos_parent.parent / "logs" / "devops_agent"
+    else:
+        # Fallback if test_repos not found
+        log_dir = Path(state["current_directory"]).parent / "logs" / "devops_agent"
+    
     os.makedirs(log_dir, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    EXECUTION_LOG_FILE = os.path.join(log_dir, f"execution_{timestamp}_full.log")
+    # Create a more descriptive timestamp that includes date and time
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
-    # Write initial execution header
+    # Create more descriptive filenames
+    EXECUTION_LOG_FILE = os.path.join(log_dir, f"devops_execution_{timestamp}_full.log")
+    STATUS_LOG_FILE = os.path.join(log_dir, f"devops_status_{timestamp}.log")
+    
+    # Write initial execution header for the full log
     with open(EXECUTION_LOG_FILE, 'w', encoding='utf-8') as f:
         f.write(f"=== DevOps Agent Execution Log ===\n")
         f.write(f"Started at: {datetime.now().isoformat()}\n")
@@ -51,6 +67,11 @@ def initialize_logging(state: Dict[str, Any]) -> str:
             f.write(f"Type: {step.step_type}\n")
             f.write(f"Files: {', '.join(step.files)}\n")
         f.write("\n" + "="*80 + "\n\n")
+
+    # Write initial header for the status log
+    with open(STATUS_LOG_FILE, 'w', encoding='utf-8') as f:
+        f.write("=== DevOps Agent Status Log ===\n")
+        f.write(f"Started at: {datetime.now().isoformat()}\n\n")
     
     return EXECUTION_LOG_FILE
 
@@ -103,6 +124,84 @@ def log_interaction(state: Dict[str, Any], node_name: str, details: Dict):
                     f.write(f"Error: {last_action['result']['error']}\n")
         
         f.write("\n")
+
+def log_status_update(tagline: str, summary: str):
+    """Log a short 'Tagline' and 'Summary' to STATUS_LOG_FILE for quick status tracking."""
+    global STATUS_LOG_FILE
+    if not STATUS_LOG_FILE:
+        return
+    
+    with open(STATUS_LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+        f.write(f"Tagline: {tagline}\n")
+        f.write(f"Summary: {summary}\n\n")
+
+##############################################################################
+#                           Summaries for Decision
+##############################################################################
+
+class DecisionSummaryModel(BaseModel):
+    tagline: str
+    summary: str
+
+def generate_quick_summary_from_decision(decision: "LLMDecision") -> (str, str):
+    """
+    Generate a short tagline and summary from the LLM decision.
+    Returns a tuple of (tagline, summary).
+    """
+    try:
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+
+        # Escape any curly braces in the content and description
+        safe_content = str(decision.content).replace("{", "{{").replace("}", "}}")
+        safe_description = str(decision.description).replace("{", "{{").replace("}", "}}")
+        safe_reasoning = str(decision.reasoning).replace("{", "{{").replace("}", "}}")
+
+        prompt_text = f"""Given this DevOps Agent decision, provide a concise JSON with:
+1. tagline: 5-7 word summary of the action. It must be "creative", meaning that it shouldnt just be "Executing modify_code" or "Step Completed". It should be something that is more interesting and descriptive.
+2. summary: two to three descriptive sentences explaining what will be done and why
+
+Decision Type: {decision.type}
+Description: {safe_description}
+Content: {safe_content}
+Reasoning: {safe_reasoning}
+
+Respond with ONLY a JSON object (no markdown, no backticks):
+{{
+  "tagline": "short sentence",
+  "summary": "two sentences"
+}}"""
+
+        response = llm.invoke(prompt_text)
+        try:
+            # Clean the response content of any markdown formatting
+            content = response.content.strip()
+            # Remove markdown code block if present
+            if content.startswith('```'):
+                content = content.split('```')[1]
+                if content.startswith('json'):
+                    content = content[4:]
+            content = content.strip()
+            
+            data = json.loads(content)
+            # Validate it has tagline and summary
+            validated = DecisionSummaryModel(**data)
+            return validated.tagline, validated.summary
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(f"Failed to parse decision summary as JSON: {response.content}\nError: {e}")
+            # Provide meaningful defaults instead of "No tagline/summary"
+            if decision.type == "end":
+                return "Mission Accomplished", "The current step has been completed successfully. Moving to next step."
+            return (
+                f"DevOps {decision.type.replace('_', ' ').title()} in Progress",
+                f"Performing a {decision.type.replace('_', ' ')} operation. {safe_description}"
+            )
+    except Exception as e:
+        logger.warning(f"Could not generate quick summary: {str(e)}")
+        return (
+            f"DevOps {decision.type.replace('_', ' ').title()} in Progress",
+            f"Performing a {decision.type.replace('_', ' ')} operation. {safe_description}"
+        )
 
 ##############################################################################
 #                               Data Models
@@ -223,7 +322,8 @@ Provide a concise summary in this exact JSON format:
   "summary": "Brief description of what was done",
   "key_learnings": ["List of key things learned"],
   "relevant_for_future": ["List of points relevant for future steps"]
-}}""",
+}}
+""",
         input_variables=["step_data"]
     )
     
@@ -235,13 +335,11 @@ Provide a concise summary in this exact JSON format:
         try:
             return json.loads(response.content)
         except json.JSONDecodeError:
-            # If JSON parsing fails, try to extract JSON block
             import re
             json_match = re.search(r'\{[\s\S]*\}', response.content)
             if json_match:
                 return json.loads(json_match.group(0))
             else:
-                # If all parsing fails, return a default summary
                 logger.warning(f"Failed to parse summary response: {response.content}")
                 return {
                     "summary": "Step completed but summary generation failed",
@@ -264,6 +362,7 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     """
     Query the LLM about what to do for the current step.
     If LLM says 'end', we end this step right away in the route function.
+    Additionally, log a short summary (tagline + summary) of the LLM decision.
     """
     
     current_step = state["plan_steps"][state["current_step_index"]]
@@ -272,7 +371,10 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     # Potentially add files to forge context
     if current_step.files:
         for fpath in current_step.files:
-            state["forge"].add_file(fpath)
+            try:
+                state["forge"].add_file(fpath)
+            except Exception as e:
+                logger.warning(f"File access error for {fpath}: {e}")
     
     # Format context
     exec_history = format_knowledge_sequence(state["knowledge_sequence"], current_step.description)
@@ -282,7 +384,10 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     # Attempt to gather file contents
     file_contents = {}
     if state["forge"] and current_step.files:
-        file_contents = state["forge"].get_file_contents()
+        try:
+            file_contents = state["forge"].get_file_contents()
+        except Exception as e:
+            logger.warning(f"Could not retrieve file contents: {e}")
 
     codebase_context = f"""Overview:
 {state['codebase_overview']}
@@ -303,9 +408,6 @@ Relevant Files:
         "credentials": json.dumps(state["credentials"], indent=2)
     }
     
-    from langchain_openai import ChatOpenAI
-    from langchain_core.prompts import PromptTemplate
-
     prompt = PromptTemplate(
         template=DEVOPS_AGENT_PROMPT,
         input_variables=list(context_for_llm.keys())
@@ -313,9 +415,11 @@ Relevant Files:
     llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
     
     try:
+        # 1) Get the LLM decision
         decision = llm.with_structured_output(LLMDecision).invoke(
             prompt.format(**context_for_llm)
         )
+        # 2) Log the raw decision in the full log
         log_interaction(state, "get_next_action", {
             "context": context_for_llm,
             "decision": decision.dict(),
@@ -325,10 +429,13 @@ Relevant Files:
         state["current_step_context"]["last_decision"] = decision.dict()
         state["total_attempts"] += 1
 
-        
+        # 3) Generate a short summary from that decision and log it to the status log
+        tagline, short_summary = generate_quick_summary_from_decision(decision)
+        log_status_update(tagline, short_summary)
+
         decision = LLMDecision(**decision.dict())
         
-        # If LLM says "end" or "none", finalize current step
+        # 4) If LLM says "end" or "none", finalize current step
         if decision.type in ["end", "none"]:
             logger.info(f"LLM said '{decision.type}' => finalizing current step")
             
@@ -354,14 +461,13 @@ Relevant Files:
             
             # Reset step state completely to ensure fresh context
             state["current_step_attempts"] = 0
-            state["current_step_context"] = {}  # Clear last decision
+            state["current_step_context"] = {}
             state["knowledge_sequence"] = []
             
             # If that was the last step, end workflow
             if state["current_step_index"] >= len(state["plan_steps"]):
                 logger.info("No more steps remain after LLM ended the step.")
                 return "end"
-
 
         return state
     except Exception as exc:
@@ -413,7 +519,6 @@ def execute_tool(state: DevOpsState) -> DevOpsState:
         "reasoning": decision.reasoning
     })
     
-        # Otherwise, run the selected tool
     tools = initialize_tools(state)
     tool_map = {
         "modify_code": "modify_code",
@@ -556,7 +661,6 @@ def create_devops_workflow() -> StateGraph:
     )
     
     # After execute_tool, always go back to get_next_action
-    # This ensures we get fresh context for each step
     workflow.add_edge("execute_tool", "get_next_action")
     
     # Set entry point

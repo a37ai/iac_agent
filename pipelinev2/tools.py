@@ -54,7 +54,7 @@ class DevOpsTools:
         command: str,
         timeout: Optional[int] = None,
         cwd: Optional[str] = None
-    ) -> ToolResult:
+    ) -> "ToolResult":
         """Execute a shell command in a subprocess."""
         try:
             effective_cwd = cwd if cwd else str(self.working_directory)
@@ -69,7 +69,7 @@ class DevOpsTools:
         except Exception as e:
             return ToolResult(status="error", error=str(e))
     
-    def modify_code(self, code: str, instructions: str, cwd: Optional[str] = None) -> ToolResult:
+    def modify_code(self, code: str, instructions: str, cwd: Optional[str] = None) -> "ToolResult":
         """Execute code through Forge's chat interface, returning a ToolResult."""
         if self.forge is None:
             return ToolResult(
@@ -93,7 +93,6 @@ Please make any necessary modifications and execute the code.
 """
             forge_response = self.forge.chat_and_get_updates(message)
             
-            # Wrap the forge response in a ToolResult
             if isinstance(forge_response, dict):
                 # If there's an error indicated
                 if forge_response.get("status") == "error":
@@ -122,7 +121,7 @@ Please make any necessary modifications and execute the code.
     #  File I/O
     ########################################################################
     
-    def delete_file(self, file_path: str, cwd: Optional[str] = None) -> ToolResult:
+    def delete_file(self, file_path: str, cwd: Optional[str] = None) -> "ToolResult":
         """Remove a file if it exists."""
         try:
             effective_cwd = Path(cwd if cwd else str(self.working_directory)).resolve()
@@ -140,7 +139,7 @@ Please make any necessary modifications and execute the code.
         content: str,
         mode: Optional[int] = None,
         cwd: Optional[str] = None
-    ) -> ToolResult:
+    ) -> "ToolResult":
         """Create or overwrite a file with the given content."""
         try:
             effective_cwd = Path(cwd if cwd else str(self.working_directory)).resolve()
@@ -162,7 +161,7 @@ Please make any necessary modifications and execute the code.
         template_path: str,
         destination_path: Optional[str] = None,
         replacements: Optional[Dict[str, str]] = None
-    ) -> ToolResult:
+    ) -> "ToolResult":
         """Copy a file or directory from a template, optionally performing text replacements."""
         try:
             template_path = Path(template_path).resolve()
@@ -199,7 +198,7 @@ Please make any necessary modifications and execute the code.
         file_path: str,
         args: Optional[List[str]] = None,
         cwd: Optional[str] = None
-    ) -> ToolResult:
+    ) -> "ToolResult":
         """Execute a file directly (like a script)."""
         try:
             effective_cwd = Path(cwd if cwd else str(self.working_directory)).resolve()
@@ -222,13 +221,26 @@ Please make any necessary modifications and execute the code.
     #  Human involvement
     ########################################################################
     
-    def ask_human(self, question: str) -> ToolResult:
-        """Prompt the user for input via console (blocking)."""
+    def ask_human_for_information(self, question: str) -> "ToolResult":
+        """Prompt the user for information via CLI and return their response."""
         try:
             print(f"\n[DEVOPS AGENT QUESTION]: {question}")
-            print(f"[INFO] Working Directory: {self.working_directory}")
             answer = input("Your response: ").strip()
             return ToolResult(status="success", output=answer)
+        except Exception as e:
+            return ToolResult(status="error", error=str(e))
+
+    def ask_human_for_intervention(self, explanation: str) -> "ToolResult":
+        """Wait for user intervention and explanation before proceeding."""
+        try:
+            print(f"\n[DEVOPS AGENT INTERVENTION REQUIRED]: {explanation}")
+            print("Please perform the necessary actions and type 'done' when finished.")
+            while True:
+                user_input = input("Type 'done' when finished: ").strip().lower()
+                if user_input == "done":
+                    break
+            user_explanation = input("Please explain what you did: ").strip()
+            return ToolResult(status="success", output=user_explanation)
         except Exception as e:
             return ToolResult(status="error", error=str(e))
     
@@ -236,33 +248,30 @@ Please make any necessary modifications and execute the code.
     #  LLM-based validations (via langchain_openai + custom prompts)
     ########################################################################
     
-    def _llm_validation_check(self, prompt_text: str) -> ToolResult:
+    def _llm_validation_check(self, prompt_text: str) -> "ToolResult":
         """
-        Helper: Use an LLM (via langgraph + langchain_openai) to compare two texts
-        or otherwise validate correctness. Expect a JSON with "valid": "YES"/"NO" 
-        and an "explanation".
+        Helper: Use an LLM (via langgraph + langchain_openai) to compare or validate correctness.
+        Expect a JSON with "valid": "YES"/"NO" and an "explanation".
         """
         try:
             llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
             
-            # We will instruct the LLM to respond strictly in JSON:
-            template = """You are a helpful AI that must analyze the given context 
-and produce a strict JSON response in the format:
-{{
-  "valid": "YES" or "NO",
-  "explanation": "string explaining why"
-}}
+            template = """You are a helpful AI that must analyze the given query 
+                    and produce a strict JSON response in the format:
+                    {{
+                    "valid": "YES" or "NO",
+                    "explanation": "string explaining why"
+                    }}
 
-Context to analyze:
-{context}
-"""
+                    Context to analyze:
+                    {context}
+                 """
             prompt = PromptTemplate(
                 template=template,
                 input_variables=["context"]
             )
             response = llm.invoke(prompt.format(context=prompt_text))
             
-            # Parse the JSON output
             data = json.loads(response.content.strip())
             valid = data.get("valid", "").upper()
             explanation = data.get("explanation", "No explanation provided.")
@@ -277,59 +286,57 @@ Context to analyze:
                 error=f"LLM validation failed: {str(e)}"
             )
 
-    def validate_command_output(self, command_output: str, expected_behavior: str) -> ToolResult:
+    def validate_command_output(self, command_output: str, expected_behavior: str) -> "ToolResult":
         """
-        Use an LLM to compare the actual command output to an expected behavior.
+        Use an LLM to compare the actual command output to the expected behavior.
         Return 'success' if it matches, else 'error'.
         """
         prompt_text = f"""Compare the actual command output to an expected behavior.
 
-Expected:
-{expected_behavior}
+                        Expected:
+                        {expected_behavior}
 
-Actual:
-{command_output}
+                        Actual:
+                        {command_output}
 
-        Return 'success' if it matches, else 'error'.
-
-"""
+                        Check whether the content matches the expected content.
+                        """
         return self._llm_validation_check(prompt_text)
     
-    def validate_code_changes(self, code: str, instructions: str, expected_changes: str) -> ToolResult:
+    def validate_code_changes(self, code: str, instructions: str, expected_changes: str) -> "ToolResult":
         """
         Use an LLM to compare the actual code changes to the expected changes.
         Return 'success' if it matches, else 'error'.
         """
         prompt_text = f"""We have code changes and an expected set of changes.
-Instructions that were followed: {instructions}
+                        Instructions that were followed: {instructions}
 
-Expected changes:
-{expected_changes}
+                        Expected changes:
+                        {expected_changes}
 
-Actual code changes:
-{code}
+                        Actual code changes:
+                        {code}
 
-        Return 'success' if it matches, else 'error'.
-
-"""
+                        Check whether the content matches the expected content.
+                        """
         return self._llm_validation_check(prompt_text)
     
-    def validate_file_output(self, file_content: str, expected_content: str) -> ToolResult:
+    def validate_file_output(self, file_content: str, expected_content: str) -> "ToolResult":
         """
         Use an LLM to compare the actual file content to the expected content.
         Return 'success' if it matches, else 'error'.
         """
         prompt_text = f"""Compare the actual file content to the expected content.
 
-Expected:
-{expected_content}
+                        Expected:
+                        {expected_content}
 
-Actual:
-{file_content}
+                        Actual:
+                        {file_content}
 
-        Return 'success' if it matches, else 'error'.
-
-"""
+                        Check whether the content matches the expected content.
+                        """
+        
         return self._llm_validation_check(prompt_text)
 
 def retrieve_documentation(query: str) -> Dict[str, Any]:
@@ -344,7 +351,7 @@ def retrieve_documentation(query: str) -> Dict[str, Any]:
     if not api_token:
         return {"error": "API token not found in environment variables."}
 
-    api_url = "https://api.perplexity.ai/chat/completions"  # Fixed API URL
+    api_url = "https://api.perplexity.ai/chat/completions"  # Example placeholder
 
     payload = {
         "model": "llama-3.1-sonar-small-128k-online",
@@ -378,7 +385,9 @@ def retrieve_documentation(query: str) -> Dict[str, Any]:
     try:
         response = requests.post(api_url, json=payload, headers=headers)
         response.raise_for_status()  # Raise an error for bad responses
-        return response.json()  # Return the JSON response
+        return response.json()
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
+    
 
+    

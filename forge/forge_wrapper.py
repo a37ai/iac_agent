@@ -177,7 +177,7 @@ class ForgeWrapper:
 
     def get_files(self) -> List[str]:
         """Get list of files currently in chat context"""
-        return self.coder.get_inchat_relative_files()
+        return [str(Path(fp).resolve()) for fp in self.coder.abs_fnames]
 
     def clear_history(self) -> None:
         """Clear the chat history"""
@@ -308,6 +308,7 @@ class ForgeWrapper:
             response_text = str(response)
             if response.files_changed:
                 for file in response.files_changed:
+                    file = self.coder.abs_root_path(file)
                     try:
                         with open(file, 'r') as f:
                             edited_files[file] = f.read()
@@ -333,6 +334,8 @@ class ForgeWrapper:
             - Cleaned response text
             - Dictionary of {filename: content} for edited files
         """
+        print(f"Files in chat context: {self.get_files()}")
+        print(f"ABS fnames{self.coder.abs_fnames}")
         response = self.chat(message)
         return self.get_clean_response(response)
 
