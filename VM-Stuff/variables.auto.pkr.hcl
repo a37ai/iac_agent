@@ -1,6 +1,5 @@
-# variables.pkr.hcl
-#
 # Holds commonly adjusted parameters for the Windows DevOps base image.
+# (This is a normal Packer template file with variable declarations.)
 
 # ----------------------------------------------------------------------------
 # Basic Parameters
@@ -34,7 +33,6 @@ variable "aws_region" {
 }
 
 variable "source_ami" {
-  # 2025 Windows AMI
   type    = string
   default = "ami-09ec59ede75ed2db7"
 }

@@ -1,5 +1,3 @@
-# windows-devops-base.pkr.hcl
-
 packer {
   required_plugins {
     amazon = {
@@ -10,33 +8,30 @@ packer {
 }
 
 source "amazon-ebs" "windows" {
-  region                    = var.aws_region
-  source_ami                = var.source_ami
-  instance_type             = var.instance_type
-  ami_name                  = "${var.ami_name_prefix}-{{timestamp}}"
+  region         = var.aws_region
+  source_ami     = var.source_ami
+  instance_type  = var.instance_type
+  ami_name       = "${var.ami_name_prefix}-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
 
-  communicator              = "winrm"
-  winrm_use_ssl             = true
-  winrm_insecure            = true
-  winrm_username            = var.winrm_username
+  communicator   = "winrm"
+  winrm_use_ssl  = true
+  winrm_insecure = true
+  winrm_username = var.winrm_username
 
   tags = {
-    Name        = "AI-DevOps-Base-Windows"
+    Name        = "${var.ami_name_prefix}-base"
     Environment = var.environment_tag
   }
 }
 
 build {
-  name    = var.ami_name_prefix
   sources = ["source.amazon-ebs.windows"]
 
-  # 1) Upload the agent config JSON
   provisioner "file" {
     source      = "./agent-config.json"
     destination = "${var.temp_path}/agent-config.json"
   }
 
-  # 2) Inline PowerShell provisioning
   provisioner "powershell" {
     inline = [
       "Write-Host '=== Beginning Provision Script ==='",
@@ -61,7 +56,7 @@ build {
       "if ($json.aws.enabled -eq $true) {",
       "  Write-Host '--- Installing AWS CLI version ${var.aws_cli_version} ---'",
       "  $awsVersion = \"${var.aws_cli_version}\"",
-      "  # Download and install AWS CLI v2 (latest approach, pinned version not always easy)",
+      "  # Download and install AWS CLI v2",
       "  Invoke-WebRequest -Uri 'https://awscli.amazonaws.com/AWSCLIV2.msi' -OutFile 'C:/Temp/AWSCLIV2.msi'",
       "  Start-Process msiexec.exe -ArgumentList '/i C:/Temp/AWSCLIV2.msi /quiet /norestart' -Wait",
       "  Remove-Item 'C:/Temp/AWSCLIV2.msi'",
@@ -179,58 +174,56 @@ build {
       # -----------------------------------------------------------------
       # 7. Terraform (If enabled)
       # -----------------------------------------------------------------
-        "if ($json.terraform.enabled -eq $true) {",
-        "  Write-Host \"--- Installing Terraform version ${var.terraform_version} ---\"",
-        # Save the Packer var into a PowerShell variable
-        "  $TerraformVersion = \"${var.terraform_version}\"",
-        # Build your URL in PowerShell
-        "  $TerraformUrl = \"https://releases.hashicorp.com/terraform/\" + $TerraformVersion + \"/terraform_\" + $TerraformVersion + \"_windows_amd64.zip\"",
-
-        "  Write-Host \"Downloading Terraform from $TerraformUrl\"",
-        "  Invoke-WebRequest -Uri $TerraformUrl -OutFile '${var.temp_path}/terraform.zip'",
-        "  Expand-Archive -Path '${var.temp_path}/terraform.zip' -DestinationPath '${var.temp_path}/tf'",
-        "  Move-Item '${var.temp_path}/tf/terraform.exe' 'C:/Windows/System32/terraform.exe'",
-        "  Remove-Item '${var.temp_path}/terraform.zip'",
-        "  Remove-Item '${var.temp_path}/tf' -Recurse",
-        "}",
+      "if ($json.terraform.enabled -eq $true) {",
+      "  Write-Host \"--- Installing Terraform version ${var.terraform_version} ---\"",
+      "  $TerraformVersion = \"${var.terraform_version}\"",
+      "  $TerraformUrl = \"https://releases.hashicorp.com/terraform/\" + $TerraformVersion + \"/terraform_\" + $TerraformVersion + \"_windows_amd64.zip\"",
+      "",
+      "  Write-Host \"Downloading Terraform from $TerraformUrl\"",
+      "  Invoke-WebRequest -Uri $TerraformUrl -OutFile '${var.temp_path}/terraform.zip'",
+      "  Expand-Archive -Path '${var.temp_path}/terraform.zip' -DestinationPath '${var.temp_path}/tf'",
+      "  Move-Item '${var.temp_path}/tf/terraform.exe' 'C:/Windows/System32/terraform.exe'",
+      "  Remove-Item '${var.temp_path}/terraform.zip'",
+      "  Remove-Item '${var.temp_path}/tf' -Recurse",
+      "}",
 
       # -----------------------------------------------------------------
       # 8. Helm (If enabled)
       # -----------------------------------------------------------------
-        # Helm block (If enabled)
-        "if ($json.helm.enabled -eq $true) {",
-        "  Write-Host \"--- Installing Helm version ${var.helm_version} ---\"",
-        "  $HelmVersion = \"${var.helm_version}\"",
-        "  $HelmUrl = \"https://get.helm.sh/helm-\" + $HelmVersion + \"-windows-amd64.zip\"",
-
-        "  Write-Host \"Downloading Helm from $HelmUrl\"",
-        "  Invoke-WebRequest -Uri $HelmUrl -OutFile 'C:/Temp/helm.zip'",
-        "  Expand-Archive -Path 'C:/Temp/helm.zip' -DestinationPath 'C:/Temp/helm'",
-        "  Move-Item 'C:/Temp/helm/windows-amd64/helm.exe' 'C:/Windows/System32/helm.exe'",
-        "  Remove-Item 'C:/Temp/helm.zip'",
-        "  Remove-Item 'C:/Temp/helm' -Recurse",
-        "}",
+      "if ($json.helm.enabled -eq $true) {",
+      "  Write-Host \"--- Installing Helm version ${var.helm_version} ---\"",
+      "  $HelmVersion = \"${var.helm_version}\"",
+      "  $HelmUrl = \"https://get.helm.sh/helm-\" + $HelmVersion + \"-windows-amd64.zip\"",
+      "",
+      "  Write-Host \"Downloading Helm from $HelmUrl\"",
+      "  Invoke-WebRequest -Uri $HelmUrl -OutFile 'C:/Temp/helm.zip'",
+      "  Expand-Archive -Path 'C:/Temp/helm.zip' -DestinationPath 'C:/Temp/helm'",
+      "  Move-Item 'C:/Temp/helm/windows-amd64/helm.exe' 'C:/Windows/System32/helm.exe'",
+      "  Remove-Item 'C:/Temp/helm.zip'",
+      "  Remove-Item 'C:/Temp/helm' -Recurse",
+      "}",
 
       # -----------------------------------------------------------------
-      # 9. Ansible / Chef / Puppet
+      # 9. Puppet (If enabled)
       # -----------------------------------------------------------------
-      # Puppet block (If enabled)
-        "if ($json.puppet.enabled -eq $true) {",
-        "  Write-Host \"--- Installing Puppet Agent version ${var.puppet_agent_version} ---\"",
-        "  $PuppetVersion = \"${var.puppet_agent_version}\"",
-        # If you have a pinned URL for puppet, build it:
-        "  if ($PuppetVersion -eq 'latest') {",
-        "    $PuppetUrl = 'https://downloads.puppet.com/windows/puppet7/puppet-agent-x64-latest.msi'",
-        "  } else {",
-        "    $PuppetUrl = \"https://example.com/puppet-agent-\" + $PuppetVersion + \".msi\" # or pinned path\"",
-        "  }",
+      "if ($json.puppet.enabled -eq $true) {",
+      "  Write-Host \"--- Installing Puppet Agent version ${var.puppet_agent_version} ---\"",
+      "  $PuppetVersion = \"${var.puppet_agent_version}\"",
+      "  if ($PuppetVersion -eq 'latest') {",
+      "    $PuppetUrl = 'https://downloads.puppet.com/windows/puppet7/puppet-agent-x64-latest.msi'",
+      "  } else {",
+      "    $PuppetUrl = \"https://example.com/puppet-agent-\" + $PuppetVersion + \".msi\"",
+      "  }",
+      "",
+      "  Write-Host \"Downloading Puppet from $PuppetUrl\"",
+      "  Invoke-WebRequest -Uri $PuppetUrl -OutFile 'C:/Temp/puppet.msi'",
+      "  Start-Process msiexec.exe -ArgumentList '/i C:/Temp/puppet.msi /quiet' -Wait",
+      "  Remove-Item 'C:/Temp/puppet.msi'",
+      "}",
 
-        "  Write-Host \"Downloading Puppet from $PuppetUrl\"",
-        "  Invoke-WebRequest -Uri $PuppetUrl -OutFile 'C:/Temp/puppet.msi'",
-        "  Start-Process msiexec.exe -ArgumentList '/i C:/Temp/puppet.msi /quiet' -Wait",
-        "  Remove-Item 'C:/Temp/puppet.msi'",
-        "}",
-
+      # -----------------------------------------------------------------
+      # 9b. Ansible (If enabled)
+      # -----------------------------------------------------------------
       "if ($json.ansible.enabled -eq $true) {",
       "  Write-Host '--- Installing Ansible (requires Python) ---'",
       "  if (!(Get-Command python.exe -ErrorAction SilentlyContinue)) {",
@@ -248,47 +241,50 @@ build {
       "  if ($json.ansible.inventory_file -ne '') { Set-Content -Path (Join-Path $ansDir 'inventory.ini') -Value $($json.ansible.inventory_file) }",
       "  if ($json.ansible.ssh_private_key -ne '') { Set-Content -Path (Join-Path $ansDir 'id_rsa') -Value $($json.ansible.ssh_private_key) }",
       "}",
-      # Chef
-        "if ($json.chef.enabled -eq $true) {",
-        "  Write-Host \"--- Installing Chef Workstation version ${var.chef_workstation_version} ---\"",
-        "  $ChefVersion = \"${var.chef_workstation_version}\"",
-        "  $ChefUrl = \"https://packages.chef.io/files/stable/chef-workstation/\" + $ChefVersion + \"/windows/2019/chef-workstation_\" + $ChefVersion + \"-1-x64.msi\"",
 
-        "  Write-Host \"Downloading Chef from $ChefUrl\"",
-        "  Invoke-WebRequest -Uri $ChefUrl -OutFile 'C:/Temp/chef-workstation.msi'",
-        "  Start-Process msiexec.exe -ArgumentList '/i C:/Temp/chef-workstation.msi /quiet' -Wait",
-        "  Remove-Item 'C:/Temp/chef-workstation.msi'",
-        "",
-        "  Write-Host 'Storing Chef keys if provided...'",
-        "  $chefDir = 'C:/Agent/chef'",
-        "  if (!(Test-Path $chefDir)) { New-Item -ItemType Directory -Path $chefDir | Out-Null }",
-        "  if ($json.chef.client_key -ne '')       { Set-Content -Path (Join-Path $chefDir 'client.pem')     -Value $($json.chef.client_key) }",
-        "  if ($json.chef.validation_key -ne '')   { Set-Content -Path (Join-Path $chefDir 'validation.pem') -Value $($json.chef.validation_key) }",
-        "}",
+      # -----------------------------------------------------------------
+      # 9c. Chef (If enabled)
+      # -----------------------------------------------------------------
+      "if ($json.chef.enabled -eq $true) {",
+      "  Write-Host \"--- Installing Chef Workstation version ${var.chef_workstation_version} ---\"",
+      "  $ChefVersion = \"${var.chef_workstation_version}\"",
+      "  $ChefUrl = \"https://packages.chef.io/files/stable/chef-workstation/\" + $ChefVersion + \"/windows/2019/chef-workstation_\" + $ChefVersion + \"-1-x64.msi\"",
+      "",
+      "  Write-Host \"Downloading Chef from $ChefUrl\"",
+      "  Invoke-WebRequest -Uri $ChefUrl -OutFile 'C:/Temp/chef-workstation.msi'",
+      "  Start-Process msiexec.exe -ArgumentList '/i C:/Temp/chef-workstation.msi /quiet' -Wait",
+      "  Remove-Item 'C:/Temp/chef-workstation.msi'",
+      "",
+      "  Write-Host 'Storing Chef keys if provided...'",
+      "  $chefDir = 'C:/Agent/chef'",
+      "  if (!(Test-Path $chefDir)) { New-Item -ItemType Directory -Path $chefDir | Out-Null }",
+      "  if ($json.chef.client_key -ne '')       { Set-Content -Path (Join-Path $chefDir 'client.pem')     -Value $($json.chef.client_key) }",
+      "  if ($json.chef.validation_key -ne '')   { Set-Content -Path (Join-Path $chefDir 'validation.pem') -Value $($json.chef.validation_key) }",
+      "}",
 
       # -----------------------------------------------------------------
       # 10. Jenkins (If enabled)
       # -----------------------------------------------------------------
-        "if ($json.jenkins.enabled -eq $true) {",
-        "  Write-Host \"--- Installing Jenkins CLI version ${var.jenkins_version} ---\"",
-        "  $JenkinsVersion = \"${var.jenkins_version}\"",
-        "  $JenkinsWarUrl = \"https://get.jenkins.io/war-stable/\" + $JenkinsVersion + \"/jenkins.war\"",
-
-        "  Write-Host \"Downloading Jenkins CLI from $JenkinsWarUrl\"",
-        "  Invoke-WebRequest -Uri $JenkinsWarUrl -OutFile 'C:/Temp/jenkins.war'",
-        "  New-Item -ItemType Directory -Path 'C:/Temp/jenkins-cli' | Out-Null",
-        "  Add-Type -AssemblyName System.IO.Compression.FileSystem",
-        "  [System.IO.Compression.ZipFile]::ExtractToDirectory('C:/Temp/jenkins.war','C:/Temp/jenkins-cli')",
-        "  Move-Item 'C:/Temp/jenkins-cli/WEB-INF/jenkins-cli.jar' 'C:/Windows/System32/jenkins-cli.jar'",
-        "  Remove-Item 'C:/Temp/jenkins.war'",
-        "  Remove-Item 'C:/Temp/jenkins-cli' -Recurse",
-        "",
-        "  Write-Host 'Storing Jenkins credentials if provided...'",
-        "  $jenkinsDir = 'C:/Agent/jenkins'",
-        "  if (!(Test-Path $jenkinsDir)) { New-Item -ItemType Directory -Path $jenkinsDir | Out-Null }",
-        "  $jenkinsCreds = \"url = $($json.jenkins.url)`r`nuser = $($json.jenkins.user)`r`napi_token = $($json.jenkins.api_token)\"",
-        "  Set-Content -Path (Join-Path $jenkinsDir 'jenkins_credentials.txt') -Value $jenkinsCreds",
-        "}",
+      "if ($json.jenkins.enabled -eq $true) {",
+      "  Write-Host \"--- Installing Jenkins CLI version ${var.jenkins_version} ---\"",
+      "  $JenkinsVersion = \"${var.jenkins_version}\"",
+      "  $JenkinsWarUrl = \"https://get.jenkins.io/war-stable/\" + $JenkinsVersion + \"/jenkins.war\"",
+      "",
+      "  Write-Host \"Downloading Jenkins CLI from $JenkinsWarUrl\"",
+      "  Invoke-WebRequest -Uri $JenkinsWarUrl -OutFile 'C:/Temp/jenkins.war'",
+      "  New-Item -ItemType Directory -Path 'C:/Temp/jenkins-cli' | Out-Null",
+      "  Add-Type -AssemblyName System.IO.Compression.FileSystem",
+      "  [System.IO.Compression.ZipFile]::ExtractToDirectory('C:/Temp/jenkins.war','C:/Temp/jenkins-cli')",
+      "  Move-Item 'C:/Temp/jenkins-cli/WEB-INF/jenkins-cli.jar' 'C:/Windows/System32/jenkins-cli.jar'",
+      "  Remove-Item 'C:/Temp/jenkins.war'",
+      "  Remove-Item 'C:/Temp/jenkins-cli' -Recurse",
+      "",
+      "  Write-Host 'Storing Jenkins credentials if provided...'",
+      "  $jenkinsDir = 'C:/Agent/jenkins'",
+      "  if (!(Test-Path $jenkinsDir)) { New-Item -ItemType Directory -Path $jenkinsDir | Out-Null }",
+      "  $jenkinsCreds = \"url = $($json.jenkins.url)`r`nuser = $($json.jenkins.user)`r`napi_token = $($json.jenkins.api_token)\"",
+      "  Set-Content -Path (Join-Path $jenkinsDir 'jenkins_credentials.txt') -Value $jenkinsCreds",
+      "}",
 
       # -----------------------------------------------------------------
       # 11. Datadog (If enabled)
@@ -312,7 +308,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 12. Splunk
+      # 12. Splunk (If enabled)
       # -----------------------------------------------------------------
       "if ($json.splunk.enabled -eq $true) {",
       "  Write-Host '--- Splunk: storing credentials or optionally installing forwarder ---'",
@@ -323,7 +319,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 13. Elasticsearch / Kibana
+      # 13. Elasticsearch / Kibana (If enabled)
       # -----------------------------------------------------------------
       "if ($json.elasticsearchKibana.enabled -eq $true) {",
       "  Write-Host '--- Storing Elasticsearch/Kibana credentials ---'",
@@ -338,7 +334,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 14. Grafana
+      # 14. Grafana (If enabled)
       # -----------------------------------------------------------------
       "if ($json.grafana.enabled -eq $true) {",
       "  Write-Host '--- Installing Grafana & storing credentials ---'",
@@ -354,7 +350,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 15. Prometheus
+      # 15. Prometheus (If enabled)
       # -----------------------------------------------------------------
       "if ($json.prometheus.enabled -eq $true) {",
       "  Write-Host \"--- Installing promtool & storing credentials ---\"",
@@ -375,7 +371,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 16. Vault
+      # 16. Vault (If enabled)
       # -----------------------------------------------------------------
       "if ($json.vault.enabled -eq $true) {",
       "  Write-Host \"--- Installing Vault version ${var.vault_version} & storing token ---\"",
@@ -396,7 +392,7 @@ build {
       "}",
 
       # -----------------------------------------------------------------
-      # 17. Artifactory / Nexus
+      # 17. Artifactory / Nexus (If enabled)
       # -----------------------------------------------------------------
       "if ($json.artifactory.enabled -eq $true) {",
       "  Write-Host '--- Storing Artifactory credentials ---'",
@@ -439,10 +435,4 @@ build {
       "Write-Host '=== Provision Script Completed ==='"
     ]
   }
-
-  # If Docker or Windows features require reboots, you can add:
-  # provisioner "windows-restart" {
-  #   restart_check_command = "powershell -command \"Write-Host 'Checking if a reboot is required'\""
-  #   restart_timeout       = "15m"
-  # }
 }
