@@ -1,0 +1,141 @@
+{
+    "aws": {
+        "enabled": false,
+        "access_key_id": "<REQUIRED_IF_ENABLED: AWS_ACCESS_KEY_ID>",
+        "secret_access_key": "<REQUIRED_IF_ENABLED: AWS_SECRET_ACCESS_KEY>",
+        "session_token": "<OPTIONAL: AWS_SESSION_TOKEN>",
+        "region": "<REQUIRED_IF_ENABLED: AWS_REGION e.g. us-east-1>"
+    },
+    "gcp": {
+        "enabled": false,
+        "service_account_json": "<REQUIRED_IF_ENABLED: CONTENTS_OF_SERVICE_ACCOUNT_JSON_FILE>"
+    },
+    "azure": {
+        "enabled": false,
+        "tenant_id": "<REQUIRED_IF_ENABLED: AZURE_TENANT_ID>",
+        "client_id": "<REQUIRED_IF_ENABLED: AZURE_CLIENT_ID>",
+        "client_secret": "<REQUIRED_IF_ENABLED: AZURE_CLIENT_SECRET>",
+        "subscription_id": "<REQUIRED_IF_ENABLED: AZURE_SUBSCRIPTION_ID>"
+    },
+    "gitHub": {
+        "enabled": false,
+        "use_ssh": false,
+        "token": "<REQUIRED_IF_ENABLED_AND_NOT_SSH: GITHUB_PERSONAL_ACCESS_TOKEN>"
+    },
+    "gitLab": {
+        "enabled": false,
+        "use_ssh": false,
+        "token": "<REQUIRED_IF_ENABLED_AND_NOT_SSH: GITLAB_ACCESS_TOKEN>"
+    },
+    "docker": {
+        "enabled": false,
+        "username": "<OPTIONAL: DOCKER_USERNAME>",
+        "password": "<OPTIONAL: DOCKER_PASSWORD>"
+    },
+    "kubernetes": {
+        "enabled": false,
+        "kubeconfig": "<OPTIONAL: CONTENTS_OF_KUBECONFIG_FILE>"
+    },
+    "terraform": {
+        "enabled": false
+    },
+    "helm": {
+        "enabled": false
+    },
+    "ansible": {
+        "enabled": false,
+        "inventory_file": "<OPTIONAL: PATH_TO_INVENTORY_FILE>",
+        "ssh_private_key": "<OPTIONAL: SSH_PRIVATE_KEY_CONTENTS>"
+    },
+    "chef": {
+        "enabled": false,
+        "client_key": "<OPTIONAL: CHEF_CLIENT_KEY>",
+        "validation_key": "<OPTIONAL: CHEF_VALIDATION_KEY>"
+    },
+    "puppet": {
+        "enabled": false
+    },
+    "jenkins": {
+        "enabled": false,
+        "url": "<OPTIONAL: JENKINS_URL>",
+        "user": "<OPTIONAL: JENKINS_USERNAME>",
+        "api_token": "<OPTIONAL: JENKINS_API_TOKEN>"
+    },
+    "gitHubActions": {
+        "enabled": false
+    },
+    "gitLabCI": {
+        "enabled": false
+    },
+    "datadog": {
+        "enabled": false,
+        "api_key": "<REQUIRED_IF_ENABLED: DATADOG_API_KEY>",
+        "app_key": "<OPTIONAL: DATADOG_APP_KEY>"
+    },
+    "splunk": {
+        "enabled": false,
+        "host": "<OPTIONAL: SPLUNK_HOST>",
+        "port": "8089",
+        "username": "<OPTIONAL: SPLUNK_USERNAME>",
+        "password": "<OPTIONAL: SPLUNK_PASSWORD>"
+    },
+    "elasticsearchKibana": {
+        "enabled": false,
+        "elasticsearch_url": "<OPTIONAL: ELASTICSEARCH_URL>",
+        "elasticsearch_user": "<OPTIONAL: ELASTICSEARCH_USERNAME>",
+        "elasticsearch_password": "<OPTIONAL: ELASTICSEARCH_PASSWORD>",
+        "kibana_url": "<OPTIONAL: KIBANA_URL>",
+        "kibana_user": "<OPTIONAL: KIBANA_USERNAME>",
+        "kibana_password": "<OPTIONAL: KIBANA_PASSWORD>"
+    },
+    "grafana": {
+        "enabled": false,
+        "url": "<OPTIONAL: GRAFANA_URL>",
+        "api_key": "<OPTIONAL: GRAFANA_API_KEY>"
+    },
+    "prometheus": {
+        "enabled": false,
+        "endpoint": "<OPTIONAL: PROMETHEUS_ENDPOINT>",
+        "username": "<OPTIONAL: PROMETHEUS_USERNAME>",
+        "password": "<OPTIONAL: PROMETHEUS_PASSWORD>",
+        "token": "<OPTIONAL: PROMETHEUS_TOKEN>"
+    },
+    "vault": {
+        "enabled": false,
+        "address": "<REQUIRED_IF_ENABLED: VAULT_ADDRESS>",
+        "token": "<REQUIRED_IF_ENABLED: VAULT_TOKEN>"
+    },
+    "artifactory": {
+        "enabled": false,
+        "url": "<REQUIRED_IF_ENABLED: ARTIFACTORY_URL>",
+        "username": "<OPTIONAL: ARTIFACTORY_USERNAME>",
+        "password": "<OPTIONAL: ARTIFACTORY_PASSWORD>",
+        "api_token": "<OPTIONAL: ARTIFACTORY_API_TOKEN>"
+    },
+    "nexus": {
+        "enabled": false,
+        "url": "<REQUIRED_IF_ENABLED: NEXUS_URL>",
+        "username": "<OPTIONAL: NEXUS_USERNAME>",
+        "password": "<OPTIONAL: NEXUS_PASSWORD>",
+        "api_token": "<OPTIONAL: NEXUS_API_TOKEN>"
+    },
+    "notifications": {
+        "slack": {
+            "enabled": false,
+            "webhook_url": "<REQUIRED_IF_ENABLED: SLACK_WEBHOOK_URL>"
+        },
+        "teams": {
+            "enabled": false,
+            "webhook_url": "<REQUIRED_IF_ENABLED: TEAMS_WEBHOOK_URL>"
+        },
+        "email": {
+            "enabled": false,
+            "smtp_server": "<REQUIRED_IF_ENABLED: SMTP_SERVER>",
+            "smtp_port": "587",
+            "smtp_username": "<REQUIRED_IF_ENABLED: SMTP_USERNAME>",
+            "smtp_password": "<REQUIRED_IF_ENABLED: SMTP_PASSWORD>",
+            "from": "<REQUIRED_IF_ENABLED: FROM_EMAIL_ADDRESS>",
+            "to": "<REQUIRED_IF_ENABLED: TO_EMAIL_ADDRESS>"
+        }
+    }
+}

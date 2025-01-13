@@ -1,0 +1,141 @@
+{
+    "aws": {
+        "enabled": true,
+        "access_key_id": "AKIA1234567890EXAMPLE",
+        "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "session_token": "",
+        "region": "us-east-1"
+    },
+    "gcp": {
+        "enabled": false,
+        "service_account_json": ""
+    },
+    "azure": {
+        "enabled": false,
+        "tenant_id": "",
+        "client_id": "",
+        "client_secret": "",
+        "subscription_id": ""
+    },
+    "gitHub": {
+        "enabled": true,
+        "use_ssh": false,
+        "token": "ghp_123456789abcdefghijklmnopqrstuvwxyz"
+    },
+    "gitLab": {
+        "enabled": false,
+        "use_ssh": false,
+        "token": ""
+    },
+    "docker": {
+        "enabled": true,
+        "username": "testuser",
+        "password": "testpass123"
+    },
+    "kubernetes": {
+        "enabled": true,
+        "kubeconfig": "apiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    server: https://test-cluster:6443\n  name: test-cluster\ncontexts:\n- context:\n    cluster: test-cluster\n    user: test-user\n  name: test-context\ncurrent-context: test-context\nusers:\n- name: test-user\n  user:\n    token: test-token"
+    },
+    "terraform": {
+        "enabled": true
+    },
+    "helm": {
+        "enabled": true
+    },
+    "ansible": {
+        "enabled": true,
+        "inventory_file": "[webservers]\nweb1.example.com ansible_host=192.168.1.10\n\n[all:vars]\nansible_user=testuser",
+        "ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIEpAIBAAKCAQEAtest123\n-----END OPENSSH PRIVATE KEY-----"
+    },
+    "chef": {
+        "enabled": false,
+        "client_key": "",
+        "validation_key": ""
+    },
+    "puppet": {
+        "enabled": false
+    },
+    "jenkins": {
+        "enabled": true,
+        "url": "http://jenkins.example.com:8080",
+        "user": "admin",
+        "api_token": "test_jenkins_api_token_11111"
+    },
+    "gitHubActions": {
+        "enabled": false
+    },
+    "gitLabCI": {
+        "enabled": false
+    },
+    "datadog": {
+        "enabled": true,
+        "api_key": "test_dd_api_key_12345",
+        "app_key": "test_dd_app_key_67890"
+    },
+    "splunk": {
+        "enabled": false,
+        "host": "",
+        "port": "8089",
+        "username": "",
+        "password": ""
+    },
+    "elasticsearchKibana": {
+        "enabled": false,
+        "elasticsearch_url": "",
+        "elasticsearch_user": "",
+        "elasticsearch_password": "",
+        "kibana_url": "",
+        "kibana_user": "",
+        "kibana_password": ""
+    },
+    "grafana": {
+        "enabled": false,
+        "url": "",
+        "api_key": ""
+    },
+    "prometheus": {
+        "enabled": false,
+        "endpoint": "",
+        "username": "",
+        "password": "",
+        "token": ""
+    },
+    "vault": {
+        "enabled": true,
+        "address": "http://vault.example.com:8200",
+        "token": "test_vault_token_hvs.123456789"
+    },
+    "artifactory": {
+        "enabled": false,
+        "url": "",
+        "username": "",
+        "password": "",
+        "api_token": ""
+    },
+    "nexus": {
+        "enabled": false,
+        "url": "",
+        "username": "",
+        "password": "",
+        "api_token": ""
+    },
+    "notifications": {
+        "slack": {
+            "enabled": true,
+            "webhook_url": "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+        },
+        "teams": {
+            "enabled": false,
+            "webhook_url": ""
+        },
+        "email": {
+            "enabled": true,
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_username": "notifications@example.com",
+            "smtp_password": "test_smtp_password_123",
+            "from": "notifications@example.com",
+            "to": "admin@example.com"
+        }
+    }
+}
