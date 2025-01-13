@@ -34,9 +34,9 @@ variable "aws_region" {
 }
 
 variable "source_ami" {
-  # Replace with a valid Windows Server 2019/2022 AMI in your region.
+  # 2025 Windows AMI
   type    = string
-  default = "ami-0bdcc6c05dec346bf"
+  default = "ami-09ec59ede75ed2db7"
 }
 
 variable "instance_type" {
