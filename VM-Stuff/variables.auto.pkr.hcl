@@ -1,12 +1,12 @@
-# Holds commonly adjusted parameters for the Windows DevOps base image.
-# (This is a normal Packer template file with variable declarations.)
-
+# Shared variables for the Linux DevOps base image
+# (Much like your Windows file, but adapted for Linux.)
+ 
 # ----------------------------------------------------------------------------
 # Basic Parameters
 # ----------------------------------------------------------------------------
 variable "ami_name_prefix" {
   type    = string
-  default = "win-devops-base"
+  default = "linux-devops-base"
 }
 
 variable "environment_tag" {
@@ -14,14 +14,16 @@ variable "environment_tag" {
   default = "Build"
 }
 
+# For Linux, a typical place for temp is /tmp, but you can keep or remove if you like
 variable "temp_path" {
   type    = string
-  default = "C:/Temp"
+  default = "/tmp"
 }
 
-variable "winrm_username" {
+# SSH username for Amazon Linux 2 is typically "ec2-user".
+variable "ssh_username" {
   type    = string
-  default = "Administrator"
+  default = "ec2-user"
 }
 
 # ----------------------------------------------------------------------------
@@ -32,9 +34,10 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+# Example Amazon Linux 2 AMI in us-east-1:
 variable "source_ami" {
   type    = string
-  default = "ami-09ec59ede75ed2db7"
+  default = "ami-0454e52560c7f5c55"
 }
 
 variable "instance_type" {
@@ -70,6 +73,8 @@ variable "jenkins_version" {
   default = "2.401.3"
 }
 
+# Python version doesn’t matter as much on Linux if we’re installing from yum/apt
+# but we’ll keep it for consistency
 variable "python_version" {
   type    = string
   default = "3.11.5"
