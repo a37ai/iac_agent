@@ -1,13 +1,13 @@
 {
     "aws": {
-        "enabled": false,
+        "enabled": true,
         "access_key_id": "AKIA1234567890EXAMPLE",
         "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         "session_token": "",
         "region": "us-east-1"
     },
     "gcp": {
-        "enabled": false,
+        "enabled": true,
         "service_account_json": ""
     },
     "azure": {
@@ -18,32 +18,32 @@
         "subscription_id": ""
     },
     "gitHub": {
-        "enabled": false,
+        "enabled": true,
         "use_ssh": false,
         "token": "ghp_123456789abcdefghijklmnopqrstuvwxyz"
     },
     "gitLab": {
-        "enabled": false,
+        "enabled": true,
         "use_ssh": false,
         "token": ""
     },
     "docker": {
-        "enabled": false,
+        "enabled": true,
         "username": "testuser",
         "password": "testpass123"
     },
     "kubernetes": {
-        "enabled": false,
+        "enabled": true,
         "kubeconfig": "apiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    server: https://test-cluster:6443\n  name: test-cluster\ncontexts:\n- context:\n    cluster: test-cluster\n    user: test-user\n  name: test-context\ncurrent-context: test-context\nusers:\n- name: test-user\n  user:\n    token: test-token"
     },
     "terraform": {
-        "enabled": false
+        "enabled": true
     },
     "helm": {
-        "enabled": false
+        "enabled": true
     },
     "ansible": {
-        "enabled": false,
+        "enabled": true,
         "inventory_file": "[webservers]\nweb1.example.com ansible_host=192.168.1.10\n\n[all:vars]\nansible_user=testuser",
         "ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIEpAIBAAKCAQEAtest123\n-----END OPENSSH PRIVATE KEY-----"
     },
@@ -56,7 +56,7 @@
         "enabled": true
     },
     "jenkins": {
-        "enabled": false,
+        "enabled": true,
         "url": "http://jenkins.example.com:8080",
         "user": "admin",
         "api_token": "test_jenkins_api_token_11111"
