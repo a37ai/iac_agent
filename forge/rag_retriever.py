@@ -1,131 +1,150 @@
 """
-RAG-based documentation retrieval system for DevOps tooling.
-Provides fast, relevant documentation lookup for improved code generation.
+Documentation retrieval system for enhancing Aider's code generation.
+Initially focused on Terraform documentation.
 """
-import os
+import asyncio
+import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-import json
-from dataclasses import dataclass, asdict
-import numpy as np
-from sentence_transformers import SentenceTransformer
-import torch
-from tqdm import tqdm
+from typing import List, Dict, Optional
+from documentation_manager import DocumentationManager
 
-@dataclass
-class DocChunk:
-    """Represents a chunk of documentation with metadata"""
-    content: str
-    tool_name: str
-    category: str  # e.g., 'IaC', 'CI/CD', 'Observability'
-    source: str
-    embedding: Optional[np.ndarray] = None
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary for serialization"""
-        d = asdict(self)
-        if self.embedding is not None:
-            d['embedding'] = self.embedding.tolist()
-        return d
-    
-    @classmethod
-    def from_dict(cls, d: dict) -> 'DocChunk':
-        """Create from dictionary"""
-        if d['embedding'] is not None:
-            d['embedding'] = np.array(d['embedding'])
-        return cls(**d)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class DevOpsRetriever:
-    def __init__(self, docs_dir: str = "docs", chunk_size: int = 512, chunk_overlap: int = 50):
-        """Initialize the retriever with a directory of documentation"""
-        self.docs_dir = Path(docs_dir)
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Fast and lightweight
-        self.doc_chunks: List[DocChunk] = []
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model.to(self.device)
-        
-    def add_documentation(self, content: str, tool_name: str, category: str, source: str):
-        """Add a new piece of documentation to the retriever"""
-        # Split content into manageable chunks with overlap
-        chunks = self._chunk_text(content)
-        
-        print(f"Processing {len(chunks)} chunks for {tool_name}...")
-        for chunk in tqdm(chunks, desc="Generating embeddings"):
-            doc_chunk = DocChunk(
-                content=chunk,
-                tool_name=tool_name,
-                category=category,
-                source=source
-            )
-            # Generate embedding
-            with torch.no_grad():
-                doc_chunk.embedding = self.model.encode(chunk, convert_to_tensor=True).cpu().numpy()
-            self.doc_chunks.append(doc_chunk)
+class AiderDocRetriever:
+    """Retrieves relevant documentation for Aider's code generation"""
     
-    def _chunk_text(self, text: str) -> List[str]:
-        """Split text into chunks with overlap"""
-        chunks = []
-        sentences = text.split('\n')
-        current_chunk = []
-        current_size = 0
-        
-        for sentence in sentences:
-            sentence_size = len(sentence.split())
+    def __init__(self, config_path: Optional[str] = None):
+        self.config_path = config_path or str(Path(__file__).parent / 'config.yaml')
+        self.doc_manager = DocumentationManager(self.config_path)
+    
+    async def initialize(self):
+        """Initialize by fetching documentation"""
+        await self.doc_manager.update_all_documentation()
+        logger.info("Documentation initialized")
+    
+    def get_relevant_docs(self, query: str, error_context: Optional[str] = None, k: int = 3) -> List[Dict]:
+        """Get documentation relevant to the query and error context"""
+        try:
+            # Build search query
+            search_query = query
+            if error_context:
+                search_query = f"{query} {error_context}"
             
-            if current_size + sentence_size > self.chunk_size:
-                # Add the current chunk if it's not empty
-                if current_chunk:
-                    chunks.append('\n'.join(current_chunk))
-                    # Keep last few sentences for overlap
-                    overlap_size = 0
-                    overlap_chunk = []
-                    for sent in reversed(current_chunk):
-                        sent_size = len(sent.split())
-                        if overlap_size + sent_size <= self.chunk_overlap:
-                            overlap_chunk.insert(0, sent)
-                            overlap_size += sent_size
-                        else:
-                            break
-                    current_chunk = overlap_chunk
-                    current_size = overlap_size
-                
-            current_chunk.append(sentence)
-            current_size += sentence_size
-        
-        if current_chunk:
-            chunks.append('\n'.join(current_chunk))
+            # Search documentation
+            results = self.doc_manager.search_documentation(search_query, tool_name='terraform', k=k)
             
-        return chunks
-
-    def retrieve(self, query: str, k: int = 3) -> List[Tuple[DocChunk, float]]:
-        """Retrieve the k most relevant documentation chunks for a query"""
-        if not self.doc_chunks:
+            # Filter and format results
+            formatted_results = []
+            for doc in results:
+                if doc.get('similarity', 0) >= 0.3:  # Only include results above threshold
+                    formatted_doc = {
+                        'type': doc['content_type'],
+                        'source': doc['metadata'].get('source', 'unknown'),
+                        'similarity': doc.get('similarity', 0),
+                        'summary': doc.get('summary', ''),
+                        'content': doc['content'],
+                        'examples': doc.get('examples', [])
+                    }
+                    
+                    # Add resource-specific info if available
+                    if 'resource_type' in doc['metadata']:
+                        formatted_doc['resource_type'] = doc['metadata']['resource_type']
+                    
+                    # Add provider info if available
+                    if 'provider' in doc['metadata']:
+                        formatted_doc['provider'] = doc['metadata']['provider']
+                    
+                    formatted_results.append(formatted_doc)
+            
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Error retrieving documentation: {e}")
             return []
-            
-        with torch.no_grad():
-            query_embedding = self.model.encode(query, convert_to_tensor=True).cpu().numpy()
-        
-        # Calculate similarities using numpy for efficiency
-        chunk_embeddings = np.stack([chunk.embedding for chunk in self.doc_chunks])
-        similarities = np.dot(chunk_embeddings, query_embedding)
-        
-        # Get top k indices
-        top_k_indices = np.argsort(similarities)[-k:][::-1]
-        
-        # Return chunks and their similarities
-        return [(self.doc_chunks[i], float(similarities[i])) for i in top_k_indices]
 
-    def save_index(self, path: str):
-        """Save the current index to disk"""
-        data = [chunk.to_dict() for chunk in self.doc_chunks]
-        with open(path, 'w') as f:
-            json.dump(data, f)
-
-    def load_index(self, path: str):
-        """Load an index from disk"""
-        with open(path, 'r') as f:
-            data = json.load(f)
+async def test_retriever():
+    """Test the documentation retriever with sample queries"""
+    print("Initializing documentation retriever...")
+    retriever = AiderDocRetriever()
+    await retriever.initialize()
+    
+    # Print documentation statistics
+    stats = retriever.doc_manager.get_documentation_stats()
+    print("\nDocumentation Statistics:")
+    for tool, tool_stats in stats.items():
+        print(f"\n{tool.upper()} Documentation:")
+        for key, value in tool_stats.items():
+            print(f"  {key.replace('_', ' ').title()}: {value}")
+    
+    test_cases = [
+        {
+            "query": "Create an AWS ECS cluster",
+            "error": None,
+            "min_similarity": 0.3
+        },
+        {
+            "query": "Set up an aws_ecs_cluster",
+            "error": "Error: resource aws_ecs_cluster not found",
+            "min_similarity": 0.4
+        },
+        {
+            "query": "Configure AWS provider with assume role",
+            "error": None,
+            "min_similarity": 0.5
+        },
+        {
+            "query": "Define ECS task definition with Fargate",
+            "error": None,
+            "min_similarity": 0.3
+        },
+        {
+            "query": "Set up auto scaling for ECS service",
+            "error": None,
+            "min_similarity": 0.4
+        }
+    ]
+    
+    print("\nTesting queries...")
+    for case in test_cases:
+        print(f"\nQuery: {case['query']}")
+        if case['error']:
+            print(f"Error Context: {case['error']}")
+        
+        docs = retriever.get_relevant_docs(
+            case['query'], 
+            case['error'],
+            k=3
+        )
+        
+        print(f"\nFound {len(docs)} relevant documents:")
+        
+        for i, doc in enumerate(docs, 1):
+            print(f"\nDocument {i}:")
+            print(f"Type: {doc['type']}")
+            print(f"Source: {doc['source']}")
+            print(f"Similarity: {doc['similarity']:.3f}")
             
-        self.doc_chunks = [DocChunk.from_dict(d) for d in data]
+            if 'resource_type' in doc:
+                print(f"Resource Type: {doc['resource_type']}")
+            if 'provider' in doc:
+                print(f"Provider: {doc['provider']}")
+            
+            print(f"\nSummary: {doc['summary']}")
+            
+            if doc['examples']:
+                print("\nExample:")
+                print(doc['examples'][0])
+            
+            if 'related_docs' in doc and doc['related_docs']:
+                print("\nRelated Documentation:")
+                for related in doc['related_docs']:
+                    print(f"- {related['relation_type']}: {related.get('metadata', {}).get('title', 'Untitled')}")
+            
+            print("\nContent Preview:")
+            content_preview = doc['content'][:300]
+            print(content_preview + "..." if len(doc['content']) > 300 else content_preview)
+
+if __name__ == "__main__":
+    asyncio.run(test_retriever())

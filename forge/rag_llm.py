@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import asyncio
 import logging
 from .rag_retriever import DevOpsRetriever, DocChunk
+from .aider_enhancer import AiderEnhancer, TerraformDoc
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -18,12 +19,14 @@ class RAGResponse:
     relevant_docs: List[DocChunk]
     confidence: float
     tool_name: str
-    category: str
+    content_type: str
+    version: str
 
 class RAGLLMPipeline:
-    def __init__(self, retriever: DevOpsRetriever):
+    def __init__(self):
         """Initialize the RAG-enhanced LLM pipeline"""
-        self.retriever = retriever
+        self.retriever = DevOpsRetriever()
+        self.aider_enhancer = AiderEnhancer()
         
     async def process_query(self, query: str, context: Optional[Dict] = None) -> RAGResponse:
         """
@@ -44,20 +47,22 @@ class RAGLLMPipeline:
                     relevant_docs=[],
                     confidence=0.0,
                     tool_name="unknown",
-                    category="unknown"
+                    content_type="unknown",
+                    version="unknown"
                 )
             
-            # Get the most relevant tool and category
+            # Get the most relevant tool and metadata
             top_chunk, similarity = doc_chunks[0]
-            tool_name = top_chunk.tool_name
-            category = top_chunk.category
             
             # Step 2: Use second LLM (with larger context) to generate response
-            logger.info(f"Step 2: Generating response using {tool_name} documentation...")
+            logger.info(f"Step 2: Generating response using {top_chunk.tool_name} documentation...")
             relevant_content = self._format_doc_content(doc_chunks)
             
             # Format the prompt with documentation context
             full_prompt = self._format_prompt(query, relevant_content, context)
+            
+            # Enhance the prompt with Terraform documentation
+            terraform_docs = self.aider_enhancer.enhance_prompt(query)
             
             # This would integrate with your actual LLM infrastructure
             # For now, returning a placeholder
@@ -68,8 +73,9 @@ class RAGLLMPipeline:
                 answer=response,
                 relevant_docs=[chunk for chunk, _ in doc_chunks],
                 confidence=max(sim for _, sim in doc_chunks),
-                tool_name=tool_name,
-                category=category
+                tool_name=top_chunk.tool_name,
+                content_type=top_chunk.content_type,
+                version=top_chunk.version
             )
             
         except Exception as e:
@@ -79,24 +85,30 @@ class RAGLLMPipeline:
                 relevant_docs=[],
                 confidence=0.0,
                 tool_name="unknown",
-                category="unknown"
+                content_type="unknown",
+                version="unknown"
             )
     
     def _generate_doc_query(self, query: str, context: Optional[Dict]) -> str:
         """Generate a documentation-focused query"""
         doc_query = f"""
-        Find documentation about DevOps tools and practices related to:
+        Find DevOps tool documentation relevant to:
         {query}
         
         Context:
         {context if context else 'No additional context provided'}
         
+        Consider documentation for:
+        1. Infrastructure as Code (Terraform, Ansible)
+        2. Containers (Docker, Kubernetes)
+        3. CI/CD (GitLab, GitHub Actions, Jenkins)
+        4. Monitoring (Prometheus, Grafana)
+        
         Focus on:
-        1. Infrastructure as Code (IaC)
-        2. Container orchestration
-        3. CI/CD pipelines
-        4. Monitoring and observability
-        5. Configuration management
+        - API references
+        - Configuration examples
+        - Best practices
+        - Common patterns
         """
         return doc_query
     
@@ -105,9 +117,10 @@ class RAGLLMPipeline:
         content = []
         for chunk, similarity in doc_chunks:
             content.append(f"""
-            Tool: {chunk.tool_name} ({chunk.category})
+            Tool: {chunk.tool_name} (Version: {chunk.version})
+            Type: {chunk.content_type}
             Relevance: {similarity:.2f}
-            Source: {chunk.source}
+            Metadata: {chunk.metadata}
             
             {chunk.content}
             """)
@@ -127,19 +140,46 @@ Additional Context:
 {context if context else 'No additional context provided'}
 
 Please provide a solution that:
-1. Directly addresses the query
+1. Directly addresses the query using the most relevant tool(s)
 2. Uses the provided documentation appropriately
 3. Follows DevOps best practices
-4. Includes any necessary code or configuration
+4. Includes necessary code or configuration examples
 5. Explains any assumptions or prerequisites
-6. Highlights potential security considerations
+6. Highlights security considerations
 7. Suggests monitoring and observability practices
 
 Your response should be:
-1. Accurate according to the documentation
+1. Accurate according to the documentation version provided
 2. Secure by default
 3. Following infrastructure as code best practices
 4. Including error handling and resilience
 5. Considering scalability and maintenance
 """
         return prompt
+
+# Simple test function
+def test_enhancer():
+    """Test the Aider prompt enhancement with some sample queries"""
+    enhancer = AiderEnhancer()
+    
+    test_cases = [
+        ("Create an AWS ECS cluster with autoscaling", None),
+        ("Set up a Kubernetes cluster in AWS", "Error: resource aws_eks_cluster not found"),
+        ("Configure an S3 bucket with versioning", None),
+    ]
+    
+    print("Testing Aider Prompt Enhancement")
+    print("-" * 50)
+    
+    for query, error in test_cases:
+        print(f"\nQuery: {query}")
+        if error:
+            print(f"Error Context: {error}")
+        
+        print("\nEnhanced Prompt:")
+        print("-" * 30)
+        print(enhancer.enhance_prompt(query, error))
+        print("-" * 30)
+
+if __name__ == "__main__":
+    test_enhancer()
