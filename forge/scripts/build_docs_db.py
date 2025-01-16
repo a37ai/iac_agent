@@ -31,7 +31,7 @@ DOCS_CONFIG = {
     "terraform": {
         "category": "IaC",
         "base_url": "https://developer.hashicorp.com/terraform/docs",
-        "api_docs": "https://developer.hashicorp.com/terraform/plugin/framework/handling-data",
+        "api_docs": "https://developer.hashicorp.com/terraform/plugin",
         "github_docs": "https://raw.githubusercontent.com/hashicorp/terraform-provider-aws/main/docs",
         "local_examples": "examples/terraform/*.tf",
         "patterns": [
@@ -43,7 +43,7 @@ DOCS_CONFIG = {
     "kubernetes": {
         "category": "Container Orchestration",
         "base_url": "https://kubernetes.io/docs",
-        "api_docs": "https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/",
+        "api_docs": "https://kubernetes.io/docs/reference/kubernetes-api/",
         "github_docs": "https://raw.githubusercontent.com/kubernetes/website/main/content/en/docs",
         "local_examples": "examples/kubernetes/*.yaml",
         "patterns": [
@@ -93,20 +93,37 @@ DOCS_CONFIG = {
 class DocsFetcher:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
-        self.session = None
         self.executor = ThreadPoolExecutor(max_workers=5)
+        # Get API token from environment
+        self.terraform_token = os.getenv('TERRAFORM_REGISTRY_TOKEN')
+        
+    async def _get_registry_headers(self) -> Dict[str, str]:
+        """Get headers for Terraform Registry API"""
+        headers = {
+            'User-Agent': 'Terraform-Docs-Fetcher/1.0',
+            'Accept': 'application/json'
+        }
+        if self.terraform_token:
+            headers['Authorization'] = f'Bearer {self.terraform_token}'
+        return headers
         
     @sleep_and_retry
     @limits(calls=CALLS, period=RATE_LIMIT)
-    async def fetch_url(self, url: str) -> Optional[str]:
-        """Fetch URL with rate limiting and retries"""
+    async def fetch_url(self, url: str, headers: Optional[Dict[str, str]] = None) -> Optional[str]:
+        """Fetch content from URL with rate limiting"""
         try:
-            async with self.session.get(url, timeout=30) as response:
-                if response.status == 200:
-                    return await response.text()
-                else:
-                    logger.warning(f"Failed to fetch {url}: {response.status}")
-                    return None
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        return await response.text()
+                    elif response.status == 429:  # Too Many Requests
+                        retry_after = int(response.headers.get('Retry-After', '60'))
+                        logger.warning(f"Rate limited. Waiting {retry_after} seconds...")
+                        await asyncio.sleep(retry_after)
+                        return await self.fetch_url(url, headers)
+                    else:
+                        logger.error(f"Failed to fetch {url}: {response.status}")
+                        return None
         except Exception as e:
             logger.error(f"Error fetching {url}: {e}")
             return None
@@ -153,83 +170,142 @@ class DocsFetcher:
             logger.error(f"Error extracting content: {e}")
             return ""
 
-    async def process_tool(self, tool_name: str, config: Dict):
-        """Process documentation for a specific tool"""
+    async def fetch_tool_docs(self, tool_name: str, config: dict, session: aiohttp.ClientSession) -> None:
+        """Fetch documentation for a specific tool"""
         try:
+            # Create tool directory
             tool_dir = self.output_dir / tool_name
             tool_dir.mkdir(exist_ok=True)
             
             # Fetch main documentation
-            content = await self.fetch_url(config['base_url'])
-            if content:
-                main_doc = self.extract_content(content, tool_name)
-                main_file = tool_dir / "main.txt"
-                main_file.write_text(main_doc)
-                logger.info(f"Processed main docs for {tool_name}")
+            main_url = config['base_url']
+            async with session.get(main_url) as response:
+                if response.status == 200:
+                    main_content = await response.text()
+                    logger.info(f"Processed main docs for {tool_name}")
+                    soup = BeautifulSoup(main_content, 'html.parser')
+                    content = soup.get_text(strip=True, separator=' ')
+                    doc_file = tool_dir / "main.txt"
+                    doc_file.write_text(content)
             
             # Fetch API documentation
-            api_content = await self.fetch_url(config['api_docs'])
-            if api_content:
-                api_doc = self.extract_content(api_content, tool_name)
-                api_file = tool_dir / "api.txt"
-                api_file.write_text(api_doc)
-                logger.info(f"Processed API docs for {tool_name}")
-            
-            # Fetch GitHub documentation
-            github_content = await self.fetch_url(config['github_docs'])
-            if github_content:
-                github_doc = self.extract_content(github_content, tool_name)
-                github_file = tool_dir / "github.txt"
-                github_file.write_text(github_doc)
-                logger.info(f"Processed GitHub docs for {tool_name}")
-            
+            api_url = config['api_docs']
+            async with session.get(api_url) as response:
+                if response.status == 200:
+                    api_content = await response.text()
+                    logger.info(f"Processed API docs for {tool_name}")
+                    soup = BeautifulSoup(api_content, 'html.parser')
+                    content = soup.get_text(strip=True, separator=' ')
+                    doc_file = tool_dir / "api.txt"
+                    doc_file.write_text(content)
+                    
         except Exception as e:
             logger.error(f"Error processing {tool_name}: {e}")
 
+    async def fetch_terraform_docs(self, session: aiohttp.ClientSession) -> None:
+        """Fetch Terraform-specific documentation"""
+        try:
+            # Create terraform directory
+            terraform_dir = self.output_dir / "terraform"
+            terraform_dir.mkdir(exist_ok=True)
+            
+            # Fetch main Terraform documentation sections
+            base_url = "https://developer.hashicorp.com/terraform"
+            doc_sections = [
+                "language/providers",
+                "language/resources",
+                "language/data-sources",
+                "language/functions",
+                "language/settings",
+                "cli/commands"
+            ]
+            
+            for section in doc_sections:
+                url = f"{base_url}/{section}"
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        content = await response.text()
+                        logger.info(f"Processed Terraform docs for {section}")
+                        soup = BeautifulSoup(content, 'html.parser')
+                        text_content = soup.get_text(strip=True, separator=' ')
+                        
+                        # Save to file
+                        section_name = section.replace('/', '_')
+                        doc_file = terraform_dir / f"{section_name}.txt"
+                        doc_file.write_text(text_content)
+            
+            # Fetch provider documentation from registry
+            registry_base = "https://registry.terraform.io/v1/providers"
+            registry_headers = await self._get_registry_headers()
+            
+            # Fetch AWS provider docs
+            aws_versions_url = f"{registry_base}/hashicorp/aws/versions"
+            async with session.get(aws_versions_url, headers=registry_headers) as response:
+                if response.status == 200:
+                    versions_data = await response.json()
+                    if versions_data.get('versions'):
+                        latest_version = versions_data['versions'][0]['version']
+                        
+                        # Fetch docs for latest version
+                        aws_docs_url = f"{registry_base}/hashicorp/aws/{latest_version}/docs"
+                        async with session.get(aws_docs_url, headers=registry_headers) as docs_response:
+                            if docs_response.status == 200:
+                                aws_docs = await docs_response.json()
+                                for i, doc in enumerate(aws_docs):
+                                    doc_file = terraform_dir / f"provider_aws_{i}.txt"
+                                    doc_file.write_text(doc.get('content', ''))
+                                    
+        except Exception as e:
+            logger.error(f"Error processing Terraform docs: {e}")
+
     async def fetch_all(self):
         """Fetch documentation for all configured tools"""
-        async with aiohttp.ClientSession() as session:
-            self.session = session
-            tasks = []
-            for tool_name, config in DOCS_CONFIG.items():
-                task = self.process_tool(tool_name, config)
-                tasks.append(task)
-            
-            await asyncio.gather(*tasks)
-            logger.info("Completed fetching all documentation")
+        # Process Terraform first
+        async with aiohttp.ClientSession() as terraform_session:
+            await self.fetch_terraform_docs(terraform_session)
+        
+        # Process other tools
+        other_tools = {k: v for k, v in DOCS_CONFIG.items() if k != 'terraform'}
+        for tool_name, config in other_tools.items():
+            # Use a new session for each tool
+            async with aiohttp.ClientSession() as tool_session:
+                await self.fetch_tool_docs(tool_name, config, tool_session)
+        
+        logger.info("Completed fetching all documentation")
 
-def setup_examples_directory(base_dir: Path):
+async def setup_examples_directory(base_dir: Path):
     """Setup example files directory structure"""
     examples_dir = base_dir / "examples"
     examples_dir.mkdir(exist_ok=True)
     
     # Create subdirectories for each tool
-    for tool in DOCS_CONFIG.keys():
-        tool_dir = examples_dir / tool
+    for tool_name, config in DOCS_CONFIG.items():
+        tool_dir = examples_dir / tool_name
         tool_dir.mkdir(exist_ok=True)
         
+    logger.info(f"Example templates directory created at {examples_dir}")
     return examples_dir
 
-def main():
-    # Setup directories
-    base_dir = Path(__file__).parent.parent
-    docs_dir = base_dir / "docs"
-    docs_dir.mkdir(exist_ok=True)
-    
-    # Setup examples directory
-    examples_dir = setup_examples_directory(base_dir)
-    
-    # Create fetcher and run
-    fetcher = DocsFetcher(docs_dir)
-    asyncio.run(fetcher.fetch_all())
-    
-    # Save configuration
-    config_file = docs_dir / "docs_config.yaml"
-    with open(config_file, 'w') as f:
-        yaml.dump(DOCS_CONFIG, f)
-    
-    logger.info(f"Documentation saved to {docs_dir}")
-    logger.info(f"Example templates directory created at {examples_dir}")
+async def main():
+    """Main entry point"""
+    try:
+        # Setup directories
+        base_dir = Path(__file__).parent.parent
+        docs_dir = base_dir / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        
+        examples_dir = await setup_examples_directory(base_dir)
+        
+        # Initialize fetcher
+        fetcher = DocsFetcher(docs_dir)
+        await fetcher.fetch_all()
+        
+        logger.info(f"Documentation saved to {docs_dir}")
+        logger.info(f"Example templates directory created at {examples_dir}")
+        
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        raise
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
