@@ -1,9 +1,0 @@
-transformers
-torch
-sentence-transformers
-pyyaml
-aiohttp
-beautifulsoup4
-ratelimit
-numpy
-sqlalchemy
