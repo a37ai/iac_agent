@@ -2,6 +2,20 @@ provider "aws" {
   region = "us-east-1"  # Specify the AWS region
 }
 
+resource "aws_instance" "dev_instance" {
+  ami           = var.ami_id
+  instance_type = "t2.micro"
+  tags = {
+    Name = "Development Instance"
+  }
+  
+  # Use default security group
+  vpc_security_group_ids = ["default"]
+  
+  # No key pair
+  key_name = ""
+}
+
 resource "aws_instance" "ec2_instance_1" {
   ami           = "ami-0c55b159cbfafe1f0"  # Default AMI ID for t2.micro in the selected region
   instance_type = "t2.micro"
