@@ -1,24 +1,11 @@
 {
   "repository_type": "mono",
-  "repository_overview": "# Comprehensive Overview of the Mono Repository\n\n## 1. Overall Architecture\n\n### High-level System Design\nThe repository is structured to manage Azure infrastructure using Terraform, an Infrastructure as Code (IaC) tool. It is organized into separate directories (`lecture6` and `lecture7`), each containing Terraform configuration files that define and manage Azure resources. The design follows a modular approach, with each directory representing a distinct set of infrastructure configurations.\n\n### Design Patterns and Principles\n- **Infrastructure as Code (IaC):** The repository uses Terraform to define and manage infrastructure, promoting automation and consistency.\n- **Modularity:** Each directory encapsulates a specific set of configurations, allowing for isolated development and testing.\n- **Parameterization:** Use of variables and `.tfvars` files to allow flexible and reusable configurations.\n\n### System Boundaries and Interfaces\n- **Azure Cloud:** The primary boundary is the Azure cloud platform, where resources are provisioned and managed.\n- **Terraform CLI:** Interfaces with the Terraform CLI for executing plans and applying configurations.\n- **AzureRM Provider:** Interfaces with Azure services through the AzureRM provider.\n\n## 2. Development Infrastructure\n\n### Technology Stack\n- **Terraform:** Used for defining and provisioning infrastructure.\n- **AzureRM Provider:** Facilitates interaction with Azure resources.\n\n### Key Dependencies\n- **Azure Resource Manager (AzureRM):** Required for managing Azure resources.\n- **Terraform CLI:** Necessary for executing Terraform commands.\n\n### Development Tools and Requirements\n- **Terraform CLI:** For executing and managing Terraform configurations.\n- **Azure CLI:** For managing Azure resources and authentication.\n\n## 3. DevOps Infrastructure\n\n### Deployment Architecture\n- **Terraform State Management:** Utilizes Azure Storage for remote state management, ensuring consistency and collaboration.\n- **Provisioners:** Used for post-deployment configuration of resources.\n\n### Infrastructure as Code Setup\n- **Terraform Configuration Files:** Define resources, variables, outputs, and backend configurations.\n- **Backend Configuration:** Ensures state is stored remotely in Azure Storage.\n\n### Configuration Management Approach\n- **Variables and `.tfvars` Files:** Used for managing configuration parameters and environment-specific settings.\n\n### Service Dependencies and Integration Points\n- **Azure Services:** Dependencies on various Azure services such as Virtual Machines, Storage Accounts, and Network Interfaces.\n\n## 4. Environment Management\n\n### Development, Staging, and Production Environments\n- **Environment-Specific Configurations:** Managed through variables and `.tfvars` files, allowing different settings for each environment.\n\n### Environment Promotion Strategy\n- **Manual Promotion:** Likely involves manual execution of Terraform commands to promote changes across environments.\n\n### Configuration and Secret Management\n- **Variables:** Used for managing configuration settings.\n- **Secrets Management:** Not explicitly detailed; potential area for improvement.\n\n## 5. CI/CD Pipeline\n\n### Build and Deployment Processes\n- **Terraform Execution:** Likely involves manual or scripted execution of `terraform plan` and `terraform apply`.\n\n### Testing Strategies\n- **Infrastructure Testing:** Not explicitly detailed; potential area for improvement.\n\n### Deployment Strategies\n- **Standard Deployment:** No advanced strategies like blue-green or canary deployments mentioned.\n\n### Release Management\n- **Manual Release Management:** Likely involves manual execution of Terraform commands for releases.\n\n## 6. Operational Considerations\n\n### Monitoring and Logging Setup\n- **Not Detailed:** Monitoring and logging are not explicitly covered in the provided files.\n\n### Security Measures\n- **Basic Security:** Use of network security groups and tagging for resource management; further security measures not detailed.\n\n### Scalability Provisions\n- **Dynamic Resource Creation:** Use of `count` and `for_each` for scaling resources.\n\n### Backup and Disaster Recovery\n- **State Management:** Remote state storage in Azure provides some level of backup; further disaster recovery measures not detailed.\n\n## 7. Areas for Improvement\n\n### Technical Debt\n- **Code Comments and Documentation:** Improve documentation and comments within Terraform files for better maintainability.\n\n### Security Considerations\n- **Secrets Management:** Implement a robust secrets management solution.\n- **Security Audits:** Regular security audits and compliance checks.\n\n### Scalability Concerns\n- **Advanced Scaling Strategies:** Implement more advanced scaling strategies and automation.\n\n### DevOps Pipeline Optimization\n- **CI/CD Integration:** Integrate with a CI/CD tool for automated testing and deployment.\n- **Automated Testing:** Implement infrastructure testing to catch issues early in the pipeline.\n\nThis comprehensive overview highlights the current state of the mono repository, focusing on architecture, DevOps, and operational aspects, while also identifying areas for improvement.",
+  "repository_overview": "# Comprehensive Overview of the Mono Repository\n\n## 1. Overall Architecture\n\n### High-level System Design\nThe repository is structured to provision AWS EC2 instances using Terraform, an Infrastructure as Code (IaC) tool. The architecture is simple and revolves around defining, configuring, and deploying cloud infrastructure.\n\n### Design Patterns and Principles\n- **Infrastructure as Code (IaC):** The repository leverages IaC principles to automate the provisioning of cloud resources.\n- **Parameterization:** Use of variables to parameterize infrastructure deployment, enhancing flexibility and reusability.\n- **Output Variables:** Utilization of output variables to expose essential information post-deployment.\n\n### System Boundaries and Interfaces\n- **Terraform Configuration Files:** Serve as the primary interface for defining infrastructure.\n- **AWS Provider:** Acts as the boundary for interacting with AWS services.\n\n## 2. Development Infrastructure\n\n### Technology Stack\n- **Terraform:** For defining and provisioning infrastructure.\n- **AWS:** As the cloud service provider.\n\n### Key Dependencies\n- **Terraform AWS Provider:** Required for managing AWS resources.\n\n### Development Tools and Requirements\n- **Terraform CLI:** For executing Terraform commands.\n- **AWS CLI (optional):** For managing AWS resources and credentials.\n\n## 3. DevOps Infrastructure\n\n### Deployment Architecture\n- **Terraform Scripts:** Used to deploy infrastructure directly to AWS.\n\n### Infrastructure as Code Setup\n- **Main.tf:** Defines the core infrastructure components.\n- **Variables.tf:** Parameterizes the deployment.\n- **Outputs.tf:** Captures and exposes deployment outputs.\n\n### Configuration Management Approach\n- **Environment Variables:** Used for managing sensitive data like AWS credentials.\n\n### Service Dependencies and Integration Points\n- **AWS Services:** EC2 instances are provisioned using AWS services.\n\n## 4. Environment Management\n\n### Development, Staging, and Production Environments\n- The repository does not explicitly define separate environments, but Terraform configurations can be adapted for different environments by using variable files or workspaces.\n\n### Environment-specific Configurations\n- **Variables.tf:** Can be extended to include environment-specific configurations.\n\n### Environment Promotion Strategy\n- Not explicitly defined; could be managed through Terraform workspaces or separate state files.\n\n### Configuration and Secret Management\n- **Environment Variables:** Used for managing AWS credentials, but lacks a robust secret management solution.\n\n## 5. CI/CD Pipeline\n\n### Build and Deployment Processes\n- The repository does not include CI/CD pipeline configurations, but Terraform can be integrated into CI/CD systems like Jenkins, GitLab CI, or GitHub Actions.\n\n### Testing Strategies\n- No explicit testing strategies are defined for infrastructure code.\n\n### Deployment Strategies\n- **Direct Deployment:** Current setup suggests direct deployment without advanced strategies like blue-green or canary.\n\n### Release Management\n- Not explicitly defined; could be managed through version control and tagging.\n\n## 6. Operational Considerations\n\n### Monitoring and Logging Setup\n- No monitoring or logging setup is defined within the repository.\n\n### Security Measures\n- **Environment Variables:** Used for sensitive data, but lacks advanced security measures like encryption or secret management tools.\n\n### Scalability Provisions\n- The current setup provisions a single EC2 instance; scalability would require additional configurations.\n\n### Backup and Disaster Recovery\n- Not addressed in the current setup; would require additional configurations and tools.\n\n## 7. Areas for Improvement\n\n### Technical Debt\n- **Lack of CI/CD Integration:** Incorporate CI/CD pipelines for automated testing and deployment.\n- **Environment Management:** Define clear strategies for managing multiple environments.\n\n### Security Considerations\n- **Secret Management:** Implement a more secure method for managing secrets, such as AWS Secrets Manager or HashiCorp Vault.\n\n### Scalability Concerns\n- **Scalability Configurations:** Enhance configurations to support scaling, such as using AWS Auto Scaling groups.\n\n### DevOps Pipeline Optimization\n- **Testing and Validation:** Integrate infrastructure testing tools like Terratest or Checkov.\n- **Advanced Deployment Strategies:** Consider implementing blue-green or canary deployments for safer rollouts.\n\nThis analysis provides a comprehensive overview of the current state of the mono repository, highlighting strengths and areas for improvement in architecture, DevOps, and operational aspects.",
   "file_tree": {
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6": {
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/output.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/provisioner.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/main.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/var.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/demo.auto.tfvars": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/backend.tf": "file"
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7": {
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/output.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/data.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/main.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/var.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/demo.auto.tfvars": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/backend.tf": "file",
-      "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/import.tf": "file"
-    }
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/outputs.tf": "file",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/main.tf": "file",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/README.md": "file",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/variables.tf": "file"
   },
   "environments": {
     "development": [],
@@ -26,272 +13,16 @@
     "production": []
   },
   "file_analyses": {
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/output.tf": {
-      "main_purpose": "The main purpose of this Terraform file is to define and output various infrastructure resource attributes for easy access and use in other configurations or modules. It serves as a way to expose key information about the deployed resources.",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/outputs.tf": {
+      "main_purpose": "The file defines an output variable in a Terraform configuration to expose the public DNS of an AWS EC2 instance.",
       "key_components": [
-        "output 'rgname'",
-        "output 'storage'",
-        "output 'container'",
-        "output 'dnszone'",
-        "output 'random_password'",
-        "output 'public_ip'",
-        "output 'virtual_machine'"
-      ],
-      "patterns": [
-        "Use of Terraform output blocks to expose resource attributes",
-        "Use of iteration and transformation within output (e.g., converting DNS names to uppercase)",
-        "Aggregation of multiple resource attributes using splat expressions"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "azurerm_resource_group",
-        "azurerm_storage_account",
-        "azurerm_storage_container",
-        "random_password",
-        "azurerm_public_ip",
-        "azurerm_virtual_machine"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/provisioner.tf": {
-      "main_purpose": "The main purpose of this Terraform file is to provision and configure Azure infrastructure resources, including a public IP, network interface, and virtual machine, with specific configurations and provisioning scripts.",
-      "key_components": [
-        "azurerm_public_ip",
-        "azurerm_network_interface",
-        "azurerm_virtual_machine",
-        "provisioner 'file'",
-        "provisioner 'local-exec'",
-        "provisioner 'remote-exec'"
+        "output block",
+        "public_dns variable",
+        "aws_instance.ubuntu reference"
       ],
       "patterns": [
         "Infrastructure as Code (IaC)",
-        "Resource provisioning",
-        "Configuration management",
-        "Use of Terraform provisioners for post-deployment configuration"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "azurerm provider",
-        "random_password resource"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/main.tf": {
-      "main_purpose": "The main purpose of this Terraform file is to define and provision a set of Azure resources as infrastructure as code (IaC). It automates the creation and configuration of various Azure services, including resource groups, storage accounts, virtual networks, subnets, virtual machines, and more, to set up a cloud environment.",
-      "key_components": [
-        "azurerm provider",
-        "azurerm_resource_group",
-        "azurerm_storage_account",
-        "azurerm_storage_container",
-        "azurerm_dns_zone",
-        "azurerm_network_security_group",
-        "azurerm_cosmosdb_account",
-        "azurerm_virtual_network",
-        "azurerm_subnet",
-        "azurerm_public_ip",
-        "azurerm_network_interface",
-        "random_password",
-        "azurerm_virtual_machine"
-      ],
-      "patterns": [
-        "Use of Terraform for IaC",
-        "Dynamic resource creation using count and for_each",
-        "Variable usage for configuration flexibility",
-        "Resource dependencies and references",
-        "Tagging for resource management"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "Azure Resource Manager (azurerm provider)",
-        "Terraform CLI"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/var.tf": {
-      "main_purpose": "The file defines input variables for a Terraform configuration, which are used to parameterize the infrastructure deployment.",
-      "key_components": [
-        "variable 'resourcename'",
-        "variable 'location'",
-        "variable 'tags'",
-        "variable 'storagename'",
-        "variable 'containername'",
-        "variable 'dnsname'",
-        "variable 'networkrule'",
-        "variable 'enviornment'",
-        "variable 'account_type'",
-        "variable 'loc'",
-        "variable 'address_space'",
-        "variable 'tag2'"
-      ],
-      "patterns": [
-        "Use of Terraform variables to parameterize infrastructure",
-        "Use of different data types for variables (e.g., map, list)"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "Terraform"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/demo.auto.tfvars": {
-      "main_purpose": "The file is a Terraform variable definition file used to define and configure infrastructure resources on Azure. It specifies various parameters and settings required for resource creation and management.",
-      "key_components": [
-        "resourcename",
-        "location",
-        "tags",
-        "storagename",
-        "containername",
-        "dnsname",
-        "networkrule",
-        "tag2",
-        "enviornment",
-        "account_type",
-        "loc",
-        "address_space"
-      ],
-      "patterns": [
-        "Infrastructure as Code (IaC)",
-        "Use of variables for resource configuration",
-        "Network security rules definition",
-        "Tagging for resource management"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "AzureRM provider for Terraform"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture6/backend.tf": {
-      "main_purpose": "The file configures the backend for Terraform to store its state in an Azure Storage Account.",
-      "key_components": [
-        "terraform block",
-        "backend configuration",
-        "azurerm backend type",
-        "resource_group_name",
-        "storage_account_name",
-        "container_name",
-        "key"
-      ],
-      "patterns": [
-        "Infrastructure as Code (IaC)",
-        "State management",
-        "Remote backend configuration"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "Azure Resource Manager (AzureRM)"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/output.tf": {
-      "main_purpose": "The file defines output variables for a Terraform configuration, which are used to extract and display specific information about the deployed Azure resources after the infrastructure is provisioned.",
-      "key_components": [
-        "output 'rgname'",
-        "output 'storage'",
-        "output 'container'",
-        "output 'dnszone'",
-        "output 'public_ip'",
-        "output 'virtual_machine'"
-      ],
-      "patterns": [
-        "Use of Terraform output blocks to expose resource attributes",
-        "Iterating over a list with a for loop to transform data (e.g., converting DNS names to uppercase)",
-        "Commented-out code indicating potential future use or optional outputs"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "azurerm_resource_group",
-        "azurerm_storage_account",
-        "azurerm_storage_container",
-        "azurerm_public_ip",
-        "azurerm_virtual_machine",
-        "var.dnsname"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/data.tf": {
-      "main_purpose": "The main purpose of this Terraform file is to define and manage Azure infrastructure resources. It retrieves existing resources and creates a new virtual machine in Azure.",
-      "key_components": [
-        "Data blocks for existing Azure resources (azurerm_resources, azurerm_subscriptions, azurerm_virtual_network, azurerm_resource_group, azurerm_network_interface)",
-        "Output blocks to expose information about resources and subscriptions",
-        "Resource block for creating an Azure Virtual Machine (azurerm_virtual_machine)"
-      ],
-      "patterns": [
-        "Infrastructure as Code (IaC) using Terraform",
-        "Data sources to fetch existing resources",
-        "Output values to expose resource information",
-        "Resource creation for Azure Virtual Machine"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "Azure provider for Terraform"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/main.tf": {
-      "main_purpose": "The main purpose of this Terraform file is to define and provision a set of Azure resources using Infrastructure as Code (IaC) principles. It automates the creation and configuration of various Azure services such as resource groups, storage accounts, virtual networks, and virtual machines.",
-      "key_components": [
-        "provider 'azurerm'",
-        "variable declarations for Azure credentials and configuration",
-        "azurerm_resource_group",
-        "azurerm_storage_account",
-        "azurerm_storage_container",
-        "azurerm_dns_zone",
-        "azurerm_network_security_group",
-        "azurerm_cosmosdb_account",
-        "azurerm_virtual_network",
-        "azurerm_subnet",
-        "azurerm_public_ip",
-        "azurerm_network_interface",
-        "random_password",
-        "azurerm_virtual_machine"
-      ],
-      "patterns": [
-        "Use of variables for dynamic configuration",
-        "Resource grouping and dependency management",
-        "Conditional resource creation (e.g., CosmosDB account based on environment)",
-        "Dynamic blocks for iterating over lists (e.g., network security rules)",
-        "Use of count and element functions for resource scaling and indexing"
+        "Output variable pattern"
       ],
       "devops_relevance": {
         "configuration": "None",
@@ -302,62 +33,20 @@
       },
       "dependencies": [
         "Terraform",
-        "AzureRM provider"
+        "AWS provider"
       ]
     },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/var.tf": {
-      "main_purpose": "The file defines input variables for a Terraform configuration, which are used to parameterize the infrastructure deployment process.",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/main.tf": {
+      "main_purpose": "The main purpose of this Terraform file is to define and provision an AWS EC2 instance using Infrastructure as Code (IaC).",
       "key_components": [
-        "variable 'resourcename'",
-        "variable 'location'",
-        "variable 'tags'",
-        "variable 'storagename'",
-        "variable 'containername'",
-        "variable 'dnsname'",
-        "variable 'networkrule'",
-        "variable 'enviornment'",
-        "variable 'account_type'",
-        "variable 'loc'",
-        "variable 'address_space'",
-        "variable 'tag2'",
-        "variable 'env'"
-      ],
-      "patterns": [
-        "Use of Terraform variables to parameterize infrastructure",
-        "Use of different data types for variables (e.g., map, list)",
-        "Provision of default values for some variables"
-      ],
-      "devops_relevance": {
-        "configuration": "None",
-        "infrastructure": "None",
-        "pipeline": "None",
-        "security": "None",
-        "monitoring": "None"
-      },
-      "dependencies": [
-        "Terraform"
-      ]
-    },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/demo.auto.tfvars": {
-      "main_purpose": "The file is a Terraform variable definition file used to define and configure infrastructure resources on Azure. It specifies various parameters and settings for resources such as storage accounts, network rules, and DNS configurations.",
-      "key_components": [
-        "resourcename",
-        "location",
-        "tags",
-        "storagename",
-        "containername",
-        "dnsname",
-        "networkrule",
-        "tag2",
-        "enviornment",
-        "account_type",
-        "loc",
-        "address_space"
+        "terraform block specifying required version",
+        "provider block for AWS configuration",
+        "aws_instance resource definition"
       ],
       "patterns": [
         "Infrastructure as Code (IaC)",
-        "Parameterization of resource configurations",
-        "Use of lists and maps for flexible configurations"
+        "Use of variables for configuration",
+        "Tagging resources for identification"
       ],
       "devops_relevance": {
         "configuration": "None",
@@ -367,23 +56,21 @@
         "monitoring": "None"
       },
       "dependencies": [
-        "Azure Resource Manager (AzureRM)"
+        "AWS provider"
       ]
     },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/backend.tf": {
-      "main_purpose": "The file configures the backend for Terraform state management using Azure Storage.",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/README.md": {
+      "main_purpose": "The README.md file provides documentation for provisioning an EC2 instance in AWS using Terraform.",
       "key_components": [
-        "backend configuration",
-        "azurerm backend type",
-        "resource_group_name",
-        "storage_account_name",
-        "container_name",
-        "key"
+        "Terraform configuration",
+        "EC2 instance provisioning",
+        "Ubuntu 14.04 Base Image AMI",
+        "AMI ID, region, and type variables",
+        "Environment variables for AWS credentials"
       ],
       "patterns": [
         "Infrastructure as Code (IaC)",
-        "State management",
-        "Remote backend configuration"
+        "Use of environment variables for sensitive data"
       ],
       "devops_relevance": {
         "configuration": "None",
@@ -393,17 +80,22 @@
         "monitoring": "None"
       },
       "dependencies": [
-        "Azure Storage",
-        "Terraform"
+        "Terraform",
+        "AWS"
       ]
     },
-    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/lecture7/import.tf": {
-      "main_purpose": "The file is intended to import an existing Azure Resource Group into Terraform management.",
+    "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/variables.tf": {
+      "main_purpose": "The file defines input variables for a Terraform configuration, which are used to parameterize the infrastructure deployment on AWS.",
       "key_components": [
-        "azurerm_resource_group"
+        "variable 'aws_region'",
+        "variable 'ami_id'",
+        "variable 'instance_type'",
+        "variable 'name'"
       ],
       "patterns": [
-        "Terraform import pattern"
+        "Infrastructure as Code (IaC)",
+        "Parameterization of infrastructure deployment",
+        "Use of default values for variables"
       ],
       "devops_relevance": {
         "configuration": "None",
@@ -413,7 +105,8 @@
         "monitoring": "None"
       },
       "dependencies": [
-        "Azure Resource Manager (azurerm)"
+        "Terraform",
+        "AWS"
       ]
     }
   },

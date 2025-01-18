@@ -1,0 +1,26 @@
+{
+  "steps": [
+    {
+      "description": "Update Terraform version in main.tf to the latest stable version.",
+      "content": "# Update the Terraform block to specify the latest stable version\nterraform {\n  required_version = \">= 1.5.0\"\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \">= 4.0.0\"\n    }\n  }\n}",
+      "step_type": "code",
+      "files": [
+        "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/main.tf"
+      ]
+    },
+    {
+      "description": "Update AWS provider version in main.tf to the latest compatible version.",
+      "content": "# Update the provider block for AWS to the latest compatible version\nprovider \"aws\" {\n  region = var.aws_region\n}",
+      "step_type": "code",
+      "files": [
+        "/Users/rkala/Documents/GitHub/iac_agent/pipelinev2/test_repos/main.tf"
+      ]
+    },
+    {
+      "description": "Verify the Terraform configuration syntax and initialize the configuration with the updated versions.",
+      "content": "terraform init\nterraform validate",
+      "step_type": "command",
+      "files": []
+    }
+  ]
+}
