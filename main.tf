@@ -2,6 +2,16 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_instance" "dev_instance_new" {
+  ami           = var.ami_id
+  instance_type = "t2.micro"
+  vpc_security_group_ids = ["default"]
+  subnet_id     = "${aws_subnet.default.id}"
+  tags = {
+    Name = "Development Instance New"
+  }
+}
+
 resource "aws_instance" "dev_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
