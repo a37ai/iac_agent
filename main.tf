@@ -1,12 +1,13 @@
 provider "aws" {
-  region = "us-east-1"  # Specify the AWS region
+  region = var.aws_region
 }
 
-resource "aws_instance" "new_instance" {
+resource "aws_instance" "my_ec2" {
   ami           = var.ami_id
-  instance_type = "t2.micro"
+  instance_type = var.instance_type
+
   tags = {
-    Name = "NewInstance"
+    Name = var.name
   }
 }
 
