@@ -16,7 +16,7 @@ resource "aws_instance" "new_instance" {
   tags = {
     Name = "${var.name}-new-instance"
   }
-  }
+}
 }
 
 resource "aws_key_pair" "development_key" {
