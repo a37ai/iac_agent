@@ -5,7 +5,7 @@ provider "aws" {
 resource "aws_instance" "dev_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
-  tags = 
+  tags = {
     Name = "dev-instance"
   }
   
