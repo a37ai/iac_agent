@@ -2,6 +2,17 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI
+  instance_type = "t2.micro"
+  subnet_id     = "${var.subnet_id}"
+}
+
+variable "subnet_id" {
+  description = "The subnet ID where the instance will be launched"
+  default     = "subnet-12345678"  # Default subnet
+}
+
 resource "aws_instance" "new_ec2" {
   ami           = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI
   instance_type = "t2.micro"
