@@ -163,3 +163,11 @@ resource "aws_instance" "project_name_dev_t2_micro" {
     Project     = "XYZ"
   }
 }
+
+resource "aws_instance" "new_instance" {
+  ami           = var.ami_id
+  instance_type = var.instance_type
+  tags = {
+    Name = "NewInstance"
+  }
+}
