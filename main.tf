@@ -2,6 +2,20 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_instance" "dev_instance" {
+  ami           = var.ami_id
+  instance_type = "t2.micro"
+  tags = {
+    Name = "dev-instance"
+  }
+  
+  # Use default security group
+  vpc_security_group_ids = [aws_security_group.allow_ssh.id]
+
+  # Specify the development environment
+  environment = "development"
+}
+
 resource "aws_instance" "new_instance" {
   ami           = var.ami_id
   instance_type = var.instance_type
