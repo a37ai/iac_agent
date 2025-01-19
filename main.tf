@@ -5,7 +5,7 @@ provider "aws" {
 resource "aws_instance" "new_instance" {
   ami           = var.ami_id
   instance_type = var.instance_type
-  tags = 
+  tags = {
     Name = "${var.name}-new-instance"
   }
 }
