@@ -2,6 +2,14 @@ provider "aws" {
   region = "us-east-1"  # Specify the AWS region
 }
 
+resource "aws_instance" "new_instance" {
+  ami           = var.ami_id
+  instance_type = "t2.micro"
+  tags = {
+    Name = "NewInstance"
+  }
+}
+
 resource "aws_instance" "dev_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
