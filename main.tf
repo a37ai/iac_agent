@@ -2,6 +2,46 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_instance" "new_ec2" {
+  ami           = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI
+  instance_type = "t2.micro"
+  subnet_id     = "${aws_subnet.default.id}"
+
+  vpc_security_group_ids = ["${aws_security_group.allow_ssh.id}"]
+
+  tags = {
+    Name = "NewEC2Instance"
+  }
+}
+
+resource "aws_security_group" "allow_ssh" {
+  vpc_id = "${aws_vpc.default.id}"
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["YOUR_IP_ADDRESS/32"]  # Replace YOUR_IP_ADDRESS with your actual IP
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_subnet" "default" {
+  vpc_id            = "${aws_vpc.default.id}"
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-1a"
+}
+
+resource "aws_vpc" "default" {
+  cidr_block = "10.0.0.0/16"
+}
+
 resource "aws_instance" "new_ec2_instance" {
   ami           = var.ami_id
   instance_type = var.instance_type
