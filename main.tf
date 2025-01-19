@@ -7,7 +7,7 @@ resource "aws_instance" "dev_instance_new" {
   instance_type = "t2.micro"
   vpc_security_group_ids = ["default"]
   subnet_id     = "${aws_subnet.default.id}"
-  tags = {
+  tags = 
     Name = "Development Instance New"
   }
 }
