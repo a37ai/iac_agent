@@ -2,6 +2,11 @@ provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_key_pair" "development_key" {
+  key_name   = "development_key"
+  public_key = file("~/.ssh/id_rsa.pub")
+}
+
 resource "aws_instance" "dev_instance" {
   ami           = var.dev_ami_id
   instance_type = "t2.micro"
