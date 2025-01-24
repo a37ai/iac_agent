@@ -1,11 +1,14 @@
 """
 Two-step LLM pipeline for improved DevOps code generation using RAG.
 """
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
-import asyncio
 import logging
-from .rag_retriever import DevOpsRetriever, DocChunk
+import re
+import json
+
+from forge.llm_interface import LLMInterface
+from .rag_retriever import RAGRetriever, DocChunk
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -19,86 +22,143 @@ class RAGResponse:
     confidence: float
     tool_name: str
     category: str
+    error_matches: Optional[List[str]] = None
+    suggested_fixes: Optional[List[str]] = None
 
 class RAGLLMPipeline:
-    def __init__(self, retriever: DevOpsRetriever):
+    def __init__(self, retriever: RAGRetriever, model: str = "gpt-3.5-turbo"):
         """Initialize the RAG-enhanced LLM pipeline"""
         self.retriever = retriever
+        self.llm = LLMInterface(model=model)
         
-    async def process_query(self, query: str, context: Optional[Dict] = None) -> RAGResponse:
-        """
-        Process a query through the two-step LLM pipeline:
-        1. First LLM call to determine which documentation to look up
-        2. Second LLM call to generate response using the documentation
-        """
+    async def process_query(self, query: str) -> str:
+        """Process a query using the RAG pipeline"""
         try:
-            # Step 1: Use first LLM to determine documentation needs
-            logger.info("Step 1: Determining relevant documentation...")
-            doc_query = self._generate_doc_query(query, context)
-            doc_chunks = self.retriever.retrieve(doc_query, k=3)
+            # Step 1: Analyze query to determine relevant documentation
+            logger.info("Step 1: Analyzing query and determining relevant documentation...")
+            analysis = await self.llm.analyze_query(query)
             
-            if not doc_chunks:
-                logger.warning("No relevant documentation found")
-                return RAGResponse(
-                    answer="I apologize, but I couldn't find relevant documentation to assist with your query.",
-                    relevant_docs=[],
-                    confidence=0.0,
-                    tool_name="unknown",
-                    category="unknown"
-                )
+            # Step 2: Retrieve relevant documentation
+            if analysis:
+                tool = analysis.get('tool')
+                category = analysis.get('category')
+                
+                # Get relevant docs
+                relevant_docs = []
+                if tool or category:
+                    criteria = {}
+                    if tool:
+                        criteria['tool_name'] = tool
+                    if category:
+                        criteria['category'] = category
+                    relevant_docs = self.retriever.query_by_criteria(criteria)
+                
+                if not relevant_docs:  # Fall back to semantic search
+                    doc_chunks = self.retriever.retrieve(query)
+                    relevant_docs = [chunk for chunk, _ in doc_chunks]
+                
+                # Step 3: Generate response using retrieved documentation
+                if relevant_docs:
+                    context = "\n---\n".join(chunk.content for chunk in relevant_docs)
+                    response = await self.llm.generate_answer(query, context)
+                    return {
+                        'tool': tool or 'unknown',
+                        'category': category or 'unknown',
+                        'answer': response
+                    }
             
-            # Get the most relevant tool and category
-            top_chunk, similarity = doc_chunks[0]
-            tool_name = top_chunk.tool_name
-            category = top_chunk.category
-            
-            # Step 2: Use second LLM (with larger context) to generate response
-            logger.info(f"Step 2: Generating response using {tool_name} documentation...")
-            relevant_content = self._format_doc_content(doc_chunks)
-            
-            # Format the prompt with documentation context
-            full_prompt = self._format_prompt(query, relevant_content, context)
-            
-            # This would integrate with your actual LLM infrastructure
-            # For now, returning a placeholder
-            # In practice, this would call your large context model (e.g., GPT-4)
-            response = "Placeholder response - integrate with your LLM"
-            
-            return RAGResponse(
-                answer=response,
-                relevant_docs=[chunk for chunk, _ in doc_chunks],
-                confidence=max(sim for _, sim in doc_chunks),
-                tool_name=tool_name,
-                category=category
-            )
+            return {
+                'tool': 'unknown',
+                'category': 'unknown',
+                'answer': "I'm sorry, I couldn't find any relevant documentation to help answer your query."
+            }
             
         except Exception as e:
-            logger.error(f"Error in RAG pipeline: {e}")
-            return RAGResponse(
-                answer=f"An error occurred while processing your query: {str(e)}",
-                relevant_docs=[],
-                confidence=0.0,
-                tool_name="unknown",
-                category="unknown"
-            )
+            logger.error(f"Error in RAG pipeline: {str(e)}")
+            return {
+                'tool': 'unknown',
+                'category': 'unknown',
+                'answer': f"An error occurred while processing your query: {str(e)}"
+            }
     
-    def _generate_doc_query(self, query: str, context: Optional[Dict]) -> str:
-        """Generate a documentation-focused query"""
-        doc_query = f"""
-        Find documentation about DevOps tools and practices related to:
-        {query}
+    def _is_error_query(self, query: str) -> bool:
+        """Determine if this is an error-related query"""
+        error_indicators = [
+            r'error',
+            r'exception',
+            r'failed',
+            r'failure',
+            r'invalid',
+            r'denied',
+            r'permission',
+            r'timeout',
+            r'refused'
+        ]
+        return any(re.search(pattern, query, re.IGNORECASE) for pattern in error_indicators)
+    
+    def _extract_error_patterns(self, text: str) -> List[str]:
+        """Extract error patterns from text"""
+        patterns = []
         
-        Context:
-        {context if context else 'No additional context provided'}
+        # Common error message patterns
+        error_patterns = [
+            r'Error:\s*(.*?)(?:\n|$)',
+            r'Exception:\s*(.*?)(?:\n|$)',
+            r'failed:\s*(.*?)(?:\n|$)',
+            r'stderr:\s*(.*?)(?:\n|$)',
+            r'\[(ERROR|FATAL)\]\s*(.*?)(?:\n|$)'
+        ]
         
-        Focus on:
-        1. Infrastructure as Code (IaC)
-        2. Container orchestration
-        3. CI/CD pipelines
-        4. Monitoring and observability
-        5. Configuration management
-        """
-        return doc_query
+        for pattern in error_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
+            for match in matches:
+                error_msg = match.group(1).strip()
+                if error_msg:
+                    patterns.append(error_msg)
+                    
+        return patterns
+    
+    def _extract_fixes_from_docs(self, doc_chunks: List[Tuple[DocChunk, float]]) -> List[str]:
+        """Extract potential fixes from documentation chunks"""
+        fixes = []
+        fix_patterns = [
+            r'(?:fix|solution|resolve):\s*(.*?)(?:\n|$)',
+            r'to resolve this:\s*(.*?)(?:\n|$)',
+            r'you can fix this by:\s*(.*?)(?:\n|$)',
+            r'recommended solution:\s*(.*?)(?:\n|$)'
+        ]
+        
+        for chunk, _ in doc_chunks:
+            for pattern in fix_patterns:
+                matches = re.finditer(pattern, chunk.content, re.IGNORECASE | re.MULTILINE)
+                for match in matches:
+                    fix = match.group(1).strip()
+                    if fix and fix not in fixes:
+                        fixes.append(fix)
+                        
+        return fixes
+    
+    def _analyze_query(self, query: str) -> Dict:
+        """Analyze query to determine relevant documentation"""
+        # Use LLM to analyze query and determine documentation needs
+        logger.info("Analyzing query and determining relevant documentation...")
+        query_analysis = self.llm.analyze_query(query)
+        
+        # Use error patterns if it's an error query
+        is_error = self._is_error_query(query)
+        if is_error:
+            error_patterns = self._extract_error_patterns(query)
+            if error_patterns:
+                query_analysis['error_patterns'] = error_patterns
+        
+        return query_analysis
+    
+    def _generate_response(self, query: str, context: str) -> str:
+        """Generate response using retrieved documentation"""
+        # Generate answer using LLM
+        answer = self.llm.generate_answer(query, context)
+        
+        return answer
     
     def _format_doc_content(self, doc_chunks: List[Tuple[DocChunk, float]]) -> str:
         """Format documentation content for the prompt"""
@@ -106,40 +166,11 @@ class RAGLLMPipeline:
         for chunk, similarity in doc_chunks:
             content.append(f"""
             Tool: {chunk.tool_name} ({chunk.category})
+            Version: {chunk.version if chunk.version else 'N/A'}
+            Topics: {', '.join(chunk.topics) if chunk.topics else 'N/A'}
             Relevance: {similarity:.2f}
             Source: {chunk.source}
             
             {chunk.content}
             """)
         return "\n\n".join(content)
-    
-    def _format_prompt(self, query: str, docs: str, context: Optional[Dict]) -> str:
-        """Format the prompt for the second LLM call"""
-        prompt = f"""Given the following DevOps documentation and query, provide a detailed solution.
-        
-Documentation:
-{docs}
-
-Query:
-{query}
-
-Additional Context:
-{context if context else 'No additional context provided'}
-
-Please provide a solution that:
-1. Directly addresses the query
-2. Uses the provided documentation appropriately
-3. Follows DevOps best practices
-4. Includes any necessary code or configuration
-5. Explains any assumptions or prerequisites
-6. Highlights potential security considerations
-7. Suggests monitoring and observability practices
-
-Your response should be:
-1. Accurate according to the documentation
-2. Secure by default
-3. Following infrastructure as code best practices
-4. Including error handling and resilience
-5. Considering scalability and maintenance
-"""
-        return prompt
