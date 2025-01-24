@@ -243,3 +243,12 @@ yarl==1.17.1
     # via aiohttp
 zipp==3.20.2
     # via importlib-metadata
+
+# RAG system dependencies
+sentence-transformers>=2.2.2
+chromadb>=0.4.22
+tenacity>=9.0.0
+torch>=2.0.0
+tqdm>=4.66.6
+pyyaml>=6.0.2
+python-dotenv>=1.0.1
