@@ -46,6 +46,8 @@ If you need to edit any of these files, ask me to *add them to the chat* first.
 Do not edit these files!
 """
 
+    rag_prefix = "Here is some documentation that may help you answer my question."
+
     shell_cmd_prompt = ""
     shell_cmd_reminder = ""
     no_shell_cmd_prompt = ""

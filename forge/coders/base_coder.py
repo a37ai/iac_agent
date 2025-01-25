@@ -660,6 +660,50 @@ class Coder:
                 ),
             ]
         return readonly_messages
+    
+    def get_rag_messages(self, prompt):
+        # TODO: add the stuff in RAGLLMPipeline
+        # find the relevant docs
+        
+        # rag_messages = []
+        # analysis = await self.llm.analyze_query(query)
+            
+        #     # Step 2: Retrieve relevant documentation
+        #     if analysis:
+        #         tool = analysis.get('tool')
+        #         category = analysis.get('category')
+                
+        #         # Get relevant docs
+        #         relevant_docs = []
+        #         if tool or category:
+        #             criteria = {}
+        #             if tool:
+        #                 criteria['tool_name'] = tool
+        #             if category:
+        #                 criteria['category'] = category
+        #             relevant_docs = self.retriever.query_by_criteria(criteria)
+                
+        #         if not relevant_docs:  # Fall back to semantic search
+        #             doc_chunks = self.retriever.retrieve(query)
+        #             relevant_docs = [chunk for chunk, _ in doc_chunks]
+                
+        #         # Step 3: Generate response using retrieved documentation
+        #         if relevant_docs:
+        #             context = "\n---\n".join(chunk.content for chunk in relevant_docs)
+        #             rag_messages += [
+        #                 dict(
+        #                     role="user",
+        #                     content=self.gpt_prompts.rag_prefix + context
+        #                 ),
+        #                 dict(
+        #                     role="assistant",
+        #                     content="Ok, I will use this documentation to answer your question now."
+        #                 )
+        #     ]
+        
+        # return rag_messages
+        
+        return []
 
     def get_chat_files_messages(self):
         chat_files_messages = []
@@ -1140,7 +1184,9 @@ class Coder:
         self.cur_messages += [
             dict(role="user", content=inp),
         ]
-
+        
+        self.cur_messages += self.get_rag_messages(inp)
+        
         chunks = self.format_messages()
         messages = chunks.all_messages()
         self.warm_cache(chunks)
