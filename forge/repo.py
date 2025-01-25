@@ -75,7 +75,7 @@ class GitRepo:
                 fname = fname.parent
 
             try:
-                repo_path = git.Repo(fname, search_parent_directories=True).working_dir
+                repo_path = git.Repo(fname, search_parent_directories=False).working_dir
                 repo_path = utils.safe_abs_path(repo_path)
                 repo_paths.append(repo_path)
             except ANY_GIT_ERROR:
@@ -97,11 +97,16 @@ class GitRepo:
             self.forge_ignore_file = Path(forge_ignore_file)
 
     def commit(self, fnames=None, context=None, message=None, forge_edits=False):
+        # print(f"[DEBUG] commit() called with fnames={fnames}, context={context}, message={message}")
         if not fnames and not self.repo.is_dirty():
+            print("[DEBUG] No filenames given and repo not dirty => skipping commit")
             return
 
         diffs = self.get_diffs(fnames)
+        # print(f"[DEBUG] commit() => Received diff (truncated): {diffs[:500]!r}")
+
         if not diffs:
+            # print("[DEBUG] commit() => diffs is empty => skip commit")
             return
 
         if message:
@@ -125,6 +130,7 @@ class GitRepo:
         if fnames:
             fnames = [str(self.abs_root_path(fn)) for fn in fnames]
             for fname in fnames:
+                # print(f"[DEBUG] Staging {fname} for commit.")
                 try:
                     self.repo.git.add(fname)
                 except ANY_GIT_ERROR as err:
@@ -145,12 +151,16 @@ class GitRepo:
             os.environ["GIT_AUTHOR_NAME"] = committer_name
 
         try:
+            # print(f"[DEBUG] Running git commit {cmd}")
             self.repo.git.commit(cmd)
             commit_hash = self.get_head_commit_sha(short=True)
+            # print(f"[DEBUG] commit() => new commit hash: {commit_hash}")
             self.io.tool_output(f"Commit {commit_hash} {commit_message}", bold=True)
             return commit_hash, commit_message
         except ANY_GIT_ERROR as err:
             self.io.tool_error(f"Unable to commit: {err}")
+            # print(f"[DEBUG] ANY_GIT_ERROR in commit(): {err}")
+
         finally:
             # Restore the env
 
@@ -209,14 +219,15 @@ class GitRepo:
         return commit_message
 
     def get_diffs(self, fnames=None):
-        # We always want diffs of index and working dir
-
+        # print(f"[DEBUG] get_diffs called with fnames={fnames}")
         current_branch_has_commits = False
         try:
             active_branch = self.repo.active_branch
+            # print(f"[DEBUG] active_branch: {active_branch}")
             try:
                 commits = self.repo.iter_commits(active_branch)
                 current_branch_has_commits = any(commits)
+                # print(f"[DEBUG] current_branch_has_commits: {current_branch_has_commits}")
             except ANY_GIT_ERROR:
                 pass
         except (TypeError,) + ANY_GIT_ERROR:
@@ -233,18 +244,24 @@ class GitRepo:
         try:
             if current_branch_has_commits:
                 args = ["HEAD", "--"] + list(fnames)
-                diffs += self.repo.git.diff(*args)
+                # print(f"[DEBUG] Running git diff with args: {args}")
+                partial_diff = self.repo.git.diff(*args)
+                # print(f"[DEBUG] Partial diff output (truncated): {partial_diff[:500]!r}")
+                diffs += partial_diff
                 return diffs
 
             wd_args = ["--"] + list(fnames)
             index_args = ["--cached"] + wd_args
 
+            # print(f"[DEBUG] No commits on branch, using diff on index and working dir for fnames: {fnames}")
             diffs += self.repo.git.diff(*index_args)
             diffs += self.repo.git.diff(*wd_args)
 
+            # print(f"[DEBUG] Diff result when no head commits: {diffs[:500]!r}")
             return diffs
         except ANY_GIT_ERROR as err:
             self.io.tool_error(f"Unable to diff: {err}")
+
 
     def diff_commits(self, pretty, from_commit, to_commit):
         args = []
@@ -306,6 +323,7 @@ class GitRepo:
 
         path = str(Path(PurePosixPath((Path(self.root) / path).relative_to(self.root))))
         self.normalized_path[orig_path] = path
+        # print(f"Normalized path: {orig_path} -> {path}")
         return path
 
     def refresh_forge_ignore(self):

@@ -19,3 +19,14 @@ awsSetup/
 agent_states/
 *_state.txt
 
+pipelinev2/
+pipelinev3/
+random/
+main_iac_agent/
+rq.txt
+req.txt
+dockerfile
+environment_droplet.yml
+forge/
+pipelinev4/
+pipelinev5/config/config.yaml

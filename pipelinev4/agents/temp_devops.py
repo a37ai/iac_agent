@@ -194,6 +194,11 @@ def get_next_action(state: DevOpsState) -> DevOpsState:
     Additionally, log a short summary (tagline + summary) of the LLM decision.
     """
     
+    # Check if we're out of steps first
+    if state["current_step_index"] >= len(state["plan_steps"]):
+        # Instead of returning "end", we return the state and let route_to_tool_or_end handle it
+        return state
+    
     current_step = state["plan_steps"][state["current_step_index"]]
 
     print(f"Current step: {current_step}")
@@ -292,11 +297,6 @@ Relevant Files:
             state["current_step_attempts"] = 0
             state["current_step_context"] = {}
             state["knowledge_sequence"] = []
-            
-            # If that was the last step, end workflow
-            if state["current_step_index"] >= len(state["plan_steps"]):
-                logger.info("No more steps remain after LLM ended the step.")
-                return "end"
 
         return state
     except Exception as exc:
@@ -455,16 +455,17 @@ def route_to_tool_or_end(state: DevOpsState) -> Literal["execute_tool", "end", "
     If no more steps, end entire workflow.
     """
     
-    # Inspect the LLM's last decision
-
+    # First check if we've completed all steps
     if state["current_step_index"] >= len(state["plan_steps"]):
-        logger.info("No more steps remain after LLM ended the step.")
+        logger.info("No more steps remain. Ending workflow.")
         return "end"
     
+    # Inspect the LLM's last decision
     decision_data = state["current_step_context"].get("last_decision", {})
 
     if not decision_data:
-        logger.info("No last decision. Ending workflow.")
+        logger.info("No last decision. Moving to next step.")
         return "next_step"
-
+    
+    # Continue with tool execution
     return "execute_tool"

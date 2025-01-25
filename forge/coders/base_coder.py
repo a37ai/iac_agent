@@ -100,10 +100,13 @@ class Coder:
         main_model=None,
         edit_format=None,
         io=None,
+        git_root=None,
         from_coder=None,
         summarize_from_coder=True,
         **kwargs,
     ):
+        # print(f"Coder.create called with git_root: {git_root}")
+
         import forge.coders as coders
 
         if not main_model:
@@ -150,6 +153,8 @@ class Coder:
 
             kwargs = use_kwargs
 
+        kwargs['git_root'] = git_root
+        
         for coder in coders.__all__:
             if hasattr(coder, "edit_format") and coder.edit_format == edit_format:
                 res = coder(main_model, io, **kwargs)
@@ -267,6 +272,7 @@ class Coder:
         num_cache_warming_pings=0,
         suggest_shell_commands=True,
         chat_language=None,
+        git_root=None,
     ):
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
@@ -337,18 +343,43 @@ class Coder:
 
         self.commands = commands or Commands(self.io, self)
         self.commands.coder = self
+        
+        # print(f"Initializing Coder with git_root: {git_root}")  # Debug print
+
+        self.git_root = git_root
+
+
+        # self.repo = repo
+        # repo_dir = "/Users/rithvikprakki/iac_agent/pipelinev4/test_repos"
+        # if use_git and self.repo is None:
+        #     try:
+        #         self.repo = GitRepo(
+        #             self.io,
+        #             fnames,
+        #             git_dname=repo_dir, 
+        #             # None,
+        #             models=main_model.commit_message_models(),
+        #         )
+        #         print(f"Git repo: {self.repo}")
+        #     except FileNotFoundError:
+        #         print(f"FileNotFoundError: {fnames}")
+        #         pass
 
         self.repo = repo
         if use_git and self.repo is None:
-            try:
-                self.repo = GitRepo(
-                    self.io,
-                    fnames,
-                    None,
-                    models=main_model.commit_message_models(),
-                )
-            except FileNotFoundError:
-                pass
+            if self.git_root:  # or whichever var holds the test_repos path
+                try:
+                    self.repo = GitRepo(
+                        self.io,
+                        fnames,
+                        git_dname=self.git_root,
+                        models=main_model.commit_message_models(),
+                    )
+                    # print(f"Git repo successfully created: {self.repo}")
+                except FileNotFoundError:
+                    print(f"FileNotFoundError creating GitRepo for fnames: {fnames}")
+            else:
+                print("No git_root provided; skipping GitRepo creation.")
 
         if self.repo:
             self.root = self.repo.root
@@ -471,10 +502,12 @@ class Coder:
     def abs_root_path(self, path):
         key = path
         if key in self.abs_root_path_cache:
+            # print(f""abs_root_path: Using cached path for {path}")
             return self.abs_root_path_cache[key]
 
         res = Path(self.root) / path
         res = utils.safe_abs_path(res)
+        # print(f""abs_root_path: Input: {path}, Resolved: {res}")
         self.abs_root_path_cache[key] = res
         return res
 
@@ -536,6 +569,7 @@ class Coder:
 
         prompt = ""
         for fname, content in self.get_abs_fnames_content():
+            # print(f""get_files_content: Processing file: {fname}")
             if not is_image_file(fname):
                 relative_fname = self.get_rel_fname(fname)
                 prompt += "\n"
@@ -1427,8 +1461,10 @@ class Coder:
 
     def check_for_file_mentions(self, content):
         mentioned_rel_fnames = self.get_file_mentions(content)
+        # print(f""check_for_file_mentions: Mentions in content: {mentioned_rel_fnames}")
 
         new_mentions = mentioned_rel_fnames - self.ignore_mentions
+        # print(f""check_for_file_mentions: New mentions: {new_mentions}")
 
         if not new_mentions:
             return
@@ -1719,8 +1755,11 @@ class Coder:
 
     def get_rel_fname(self, fname):
         try:
-            return os.path.relpath(fname, self.root)
+            rel_path =  os.path.relpath(fname, self.root)
+            # print(f""get_rel_fname: Absolute: {fname}, Relative: {rel_path}")
+            return rel_path
         except ValueError:
+            # print(f""get_rel_fname: Error resolving {fname} relative to {self.root}: {e}")
             return fname
 
     def get_inchat_relative_files(self):
@@ -1753,6 +1792,8 @@ class Coder:
         all_files = set(self.get_all_relative_files())
         inchat_files = set(self.get_inchat_relative_files())
         read_only_files = set(self.get_rel_fname(fname) for fname in self.abs_read_only_fnames)
+        addable_files = all_files - inchat_files - read_only_files
+        # print(f"get_addable_relative_files: Addable files: {addable_files}")
         return all_files - inchat_files - read_only_files
 
     def check_for_dirty_commit(self, path):
@@ -1877,13 +1918,24 @@ class Coder:
         return res
 
     def apply_updates(self):
+        print("[DEBUG] apply_updates invoked")
         edited = set()
         try:
             edits = self.get_edits()
+            # print(f"[DEBUG] Raw edits from get_edits(): {edits}")
+            # 2) Possibly do a dry-run application of these edits
             edits = self.apply_edits_dry_run(edits)
-            edits = self.prepare_to_edit(edits)
-            edited = set(edit[0] for edit in edits)
+            # print(f"[DEBUG] Edits after apply_edits_dry_run(): {edits}")
 
+            # 3) Ensure each file is recognized as allowed to edit, staging them if needed
+            edits = self.prepare_to_edit(edits)
+            # print(f"[DEBUG] Edits after prepare_to_edit(): {edits}")
+
+            # 4) Convert 'edits' to a set of just the filenames
+            edited = set(edit[0] for edit in edits)
+            # print(f"[DEBUG] Files to be actually edited: {edited}")
+
+            # 5) Apply the edits (writes out new file content)
             self.apply_edits(edits)
         except ValueError as err:
             self.num_malformed_responses += 1
@@ -1896,6 +1948,7 @@ class Coder:
             self.io.tool_output(str(err))
 
             self.reflected_message = str(err)
+            # print(f"[DEBUG] ValueError in apply_updates: {err}")
             return edited
 
         except ANY_GIT_ERROR as err:
@@ -1908,6 +1961,7 @@ class Coder:
             traceback.print_exc()
 
             self.reflected_message = str(err)
+            # print(f"[DEBUG] Unexpected error in apply_updates: {err}")
             return edited
 
         for path in edited:
@@ -1915,7 +1969,7 @@ class Coder:
                 self.io.tool_output(f"Did not apply edit to {path} (--dry-run)")
             else:
                 self.io.tool_output(f"Applied edit to {path}")
-
+        # print(f"[DEBUG] apply_updates completed, edited files: {edited}")
         return edited
 
     def parse_partial_args(self):
@@ -1956,26 +2010,54 @@ class Coder:
         return context
 
     def auto_commit(self, edited, context=None):
+
+        # print("[DEBUG] auto_commit called (base_coder.py).")
+        # print(f"[DEBUG] auto_commit: edited={edited}, context={context}")
+
         if not self.repo or not self.auto_commits or self.dry_run:
+            if not self.repo:
+                print("[DEBUG] => Skipping commit because self.repo is None!")
+            elif not self.auto_commits:
+                print("[DEBUG] => Skipping commit because self.auto_commits is False!")
+            elif self.dry_run:
+                print("[DEBUG] => Skipping commit because self.dry_run is True!")
             return
 
-        if not context:
-            context = self.get_context_from_history(self.cur_messages)
+        if not edited:
+            print("[DEBUG] No edited files provided to auto_commit.")
+            return
 
+        if not hasattr(self.repo, "root") or not self.repo.root:
+            self.io.tool_warning("No valid 'repo.root' found; skipping auto-commit.")
+            return
+
+        # Convert to relative paths
+        rel_edited = []
+        for abs_path in edited:
+            if os.path.isabs(abs_path):
+                rel_path = os.path.relpath(abs_path, start=self.repo.root)
+                rel_edited.append(rel_path)
+                # print(f"[DEBUG] Converted {abs_path} to relative path {rel_path}")
+            else:
+                rel_edited.append(abs_path)
+
+        # print(f"[DEBUG] Attempting auto_commit with files: {rel_edited}")
         try:
-            res = self.repo.commit(fnames=edited, context=context, forge_edits=True)
+            res = self.repo.commit(fnames=rel_edited, context=context, forge_edits=True)
             if res:
+                # print(f"[DEBUG] Commit successful: {res}")
                 self.show_auto_commit_outcome(res)
                 commit_hash, commit_message = res
                 return self.gpt_prompts.files_content_gpt_edits.format(
                     hash=commit_hash,
                     message=commit_message,
                 )
+            # else:
+            #     print("[DEBUG] No commit occurred; repo.commit returned None or falsy value.")
+        except Exception as err:
+            # print(f"[DEBUG] auto_commit: Exception committing => {err}")
+            self.io.tool_error(f"Error attempting auto-commit: {str(err)}")
 
-            return self.gpt_prompts.files_content_gpt_no_edits
-        except ANY_GIT_ERROR as err:
-            self.io.tool_error(f"Unable to commit: {str(err)}")
-            return
 
     def show_auto_commit_outcome(self, res):
         commit_hash, commit_message = res

@@ -126,7 +126,7 @@ def start_planning(
     )
     
     # Invoke workflow
-    final_state = workflow.invoke(initial_state, config={"recursion_limit": 25})
+    final_state = workflow.invoke(initial_state, config={"recursion_limit": 50})
     return final_state
 
 
@@ -174,25 +174,33 @@ def start_devops_agent(
         log_path = initialize_logging(initial_state)
         logger.info(f"Starting DevOps agent. Logs => {log_path}")
         
-        final_state = workflow.invoke(initial_state)
-        
-        # Summarize
-        with open(EXECUTION_LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write("\n=== Execution Summary ===\n")
-            f.write(f"Completed at: {datetime.now().isoformat()}\n")
-            f.write(f"Total Steps Completed: {len(final_state['completed_steps'])}/{len(normalized_steps)}\n")
-            f.write(f"Total Attempts: {final_state['total_attempts']}\n\n")
-            
-            f.write("Completed Steps:\n")
-            for i, step_info in enumerate(final_state["completed_steps"], 1):
-                f.write(f"\nStep {i}:\n")
-                f.write(f"Description: {step_info['description']}\n")
-                f.write(f"Status: {step_info['status']}\n")
-                if 'summary' in step_info:
-                    f.write("Summary:\n")
-                    f.write(json.dumps(step_info['summary'], indent=2) + "\n")
-            
-            f.write("\n=== End of Execution Log ===\n")
+        try:
+            # Add recursion_limit configuration here
+            final_state = workflow.invoke(initial_state, config={"recursion_limit": 100})
+        except Exception as workflow_error:
+            # If workflow fails, we still want to write the summary
+            final_state = initial_state  # Use initial state for summary if workflow fails
+            logger.error(f"Workflow error: {workflow_error}")
+            raise
+        finally:
+            # Always write summary, regardless of success or failure
+            if EXECUTION_LOG_FILE and os.path.exists(os.path.dirname(EXECUTION_LOG_FILE)):
+                with open(EXECUTION_LOG_FILE, 'a', encoding='utf-8') as f:
+                    f.write("\n=== Execution Summary ===\n")
+                    f.write(f"Completed at: {datetime.now().isoformat()}\n")
+                    f.write(f"Total Steps Completed: {len(final_state['completed_steps'])}/{len(normalized_steps)}\n")
+                    f.write(f"Total Attempts: {final_state['total_attempts']}\n\n")
+                    
+                    f.write("Completed Steps:\n")
+                    for i, step_info in enumerate(final_state["completed_steps"], 1):
+                        f.write(f"\nStep {i}:\n")
+                        f.write(f"Description: {step_info['description']}\n")
+                        f.write(f"Status: {step_info['status']}\n")
+                        if 'summary' in step_info:
+                            f.write("Summary:\n")
+                            f.write(json.dumps(step_info['summary'], indent=2) + "\n")
+                    
+                    f.write("\n=== End of Execution Log ===\n")
         
         logger.info("DevOps agent execution completed.")
         return {
@@ -203,7 +211,7 @@ def start_devops_agent(
         }
     except Exception as ex:
         logger.error(f"Error in devops agent: {ex}")
-        if EXECUTION_LOG_FILE:
+        if EXECUTION_LOG_FILE and os.path.exists(os.path.dirname(EXECUTION_LOG_FILE)):
             with open(EXECUTION_LOG_FILE, 'a', encoding='utf-8') as f:
                 f.write("\n=== Execution Error ===\n")
                 f.write(f"Error: {str(ex)}\n")
@@ -288,55 +296,46 @@ class Pipeline:
         self.system_maps_dir.mkdir(exist_ok=True)
             
     def initialize_forge(self):
-        """Initialize the forge wrapper."""
+        """Initialize the forge wrapper so that test_repos is its own .git repo."""
+        import git
+        import shutil
+
         if not self.forge:
-            import git
-            
-            # Ensure test_repos exists as separate repo
-            repo_path = self.test_repos_path
+            repo_path = self.test_repos_path  # e.g. pipelinev4/test_repos
             repo_path.mkdir(parents=True, exist_ok=True)
-            
-            try:
-                # Try to initialize or get existing repo
-                try:
-                    repo = git.Repo(repo_path)
-                except git.InvalidGitRepositoryError:
-                    repo = git.Repo.init(repo_path)
-                    
-                # Configure git
+
+            # Make test_repos have its own .git if not present
+            git_dir = repo_path / ".git"
+            if not git_dir.exists():
+                repo = git.Repo.init(repo_path)
                 with repo.config_writer() as git_config:
                     git_config.set_value('user', 'name', 'forge-bot')
                     git_config.set_value('user', 'email', 'forge-bot@example.com')
-                
-                # Ensure .gitignore exists
+
+                # Create .gitignore so we have something to commit
                 gitignore_path = repo_path / ".gitignore"
                 if not gitignore_path.exists():
                     with open(gitignore_path, 'w') as f:
                         f.write("*.pyc\n__pycache__/\n.env\n.vscode/\n")
-                    repo.index.add(['.gitignore'])
-                    repo.index.commit("Initial commit with .gitignore")
-                
-                # Create forge history file
-                forge_history = repo_path / ".forge.input.history"
-                if forge_history.is_dir():
-                    import shutil
-                    shutil.rmtree(forge_history)
-                forge_history.unlink(missing_ok=True)
-                forge_history.write_text('')
-                
-                # Initialize ForgeWrapper with explicit git root
-                # Don't pass main.tf initially - it will be created later
-                self.forge = ForgeWrapper(
-                    auto_commit=True,
-                    git_root=str(repo_path)
-                )
-                
-                # Force git to recognize the directory
-                os.chdir(str(repo_path))
-                
-            except Exception as e:
-                logger.error(f"Error initializing forge: {str(e)}")
-                raise
+
+                repo.index.add(['.gitignore'])
+                repo.index.commit("Initial commit with .gitignore")
+
+            # Clean up or create the .forge.input.history
+            forge_history = repo_path / ".forge.input.history"
+            if forge_history.is_dir():
+                shutil.rmtree(forge_history)
+            elif forge_history.exists():
+                forge_history.unlink()
+            forge_history.touch()
+
+            # Finally create the Forge wrapper using test_repos as the git_root
+            self.forge = ForgeWrapper(
+                auto_commit=True,
+                git_root=str(repo_path),  # CRITICAL: force the sub-repo as the Git root
+                # you can add other args (model, etc.)
+            )
+
             
     def map_system(self) -> Dict[str, Any]:
         """Map the system using SystemMapper and save the result."""

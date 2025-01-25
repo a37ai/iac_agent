@@ -65,6 +65,7 @@ class ForgeWrapper:
 
     def _initialize_coder(self) -> None:
         """Initialize the Forge coder with appropriate arguments"""
+        print(f"ForgeWrapper initializing coder with git_root: {self.git_root}")  # Debug print
         args = [
             "--model", self.model,
             "--yes-always",  # Don't prompt for confirmations
