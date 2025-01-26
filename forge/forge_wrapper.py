@@ -1,21 +1,25 @@
 import os
 import logging
 from pathlib import Path
-from typing import Optional, Dict, List, Generator, Union, Any, Tuple
-from dataclasses import dataclass
 import re
+from typing import Optional, Dict, List, Generator, Tuple, Union, Any
+from dataclasses import dataclass
+
 from forge.coders import Coder
 from forge.main import main as cli_main
 from forge.models import Model
+import difflib
+import patch
 
 @dataclass
 class EditResult:
     """Represents the result of an edit operation"""
     files_changed: List[str]
     commit_hash: Optional[str] = None 
-    diff: Optional[str] = None
     success: bool = True
     error: Optional[str] = None
+    message: Optional[str] = None
+    diff: Optional[Dict[str, str]] = None
 
 class ForgeWrapper:
     """A wrapper class to interact with Forge programmatically"""
@@ -87,19 +91,118 @@ class ForgeWrapper:
         if not isinstance(self.coder, Coder):
             raise ValueError(f"Failed to initialize Forge coder: {self.coder}")
 
-    def chat(self, message: str) -> Union[str, EditResult]:
+    def get_current_files_content(self) -> Dict[str, str]:
+        contents = {}
+        for file in self.coder.get_all_abs_files():
+            normalized_path = self._normalize_path(file)
+            try:
+                with open(file, 'r', encoding='utf-8') as f:
+                    contents[normalized_path] = f.read()
+            except FileNotFoundError:
+                contents[normalized_path] = ''
+        return contents
+
+    def get_edited_files_content(self, edit_result: EditResult) -> Dict[str, str]:  # Fixed return type
+        new_contents = {}
+        for file in edit_result.files_changed:
+            normalized_path = self._normalize_path(file)
+            try:
+                with open(file, 'r') as f:
+                    new_contents[normalized_path] = f.read()
+            except FileNotFoundError:
+                new_contents[normalized_path] = ''
+                
+            # try:
+            #     if normalized_path in old_contents:
+            #         with open(file, 'w') as f:
+            #             f.write(old_contents[normalized_path])
+            #     else:
+            #         os.remove(file)
+            # except FileNotFoundError:
+            #     pass
+        return new_contents
+    
+    def generate_diffs(self, old_contents: Dict[str, str], new_contents: Dict[str, str]) -> Dict[str, str]:
+        """
+        Generate unified diffs between old and new file contents.
+        
+        Args:
+            old_contents: Dict mapping filenames to their original content
+            new_contents: Dict mapping filenames to their new content
+            
+        Returns:
+            Dict mapping filenames to their unified diff strings
+        """
+        diffs = {}
+        
+        def print_contents(contents: Dict[str, str]) -> None:
+            for filename, content in contents.items():
+                print(f"File: {filename} - {len(content)} lines")
+            print("\n" + "="*50 + "\n")
+        
+        # print("Old contents:")
+        # print_contents(old_contents)
+        # print("New contents:")
+        # print_contents(new_contents)
+        
+        for filename in set(new_contents.keys()):
+            try:
+                old = old_contents.get(filename, '').splitlines(keepends=True)
+                new = new_contents.get(filename, '').splitlines(keepends=True)
+                
+                # Special handling for new/deleted files
+                if filename not in old_contents:
+                    fromfile = '/dev/null'  # Standard way to indicate new file
+                else:
+                    fromfile = f'a/{filename}'
+                    
+                if filename not in new_contents:
+                    tofile = '/dev/null'  # Standard way to indicate deleted file
+                else:
+                    tofile = f'b/{filename}'
+                
+                diff = ''.join(difflib.unified_diff(
+                    old,
+                    new,
+                    fromfile=fromfile,
+                    tofile=tofile,
+                    lineterm=''
+                ))
+                
+                if diff:  # Only include files that actually changed
+                    diffs[filename] = diff
+                    
+            except Exception as e:
+                self.logger.error(f"Error generating diff for {filename}: {str(e)}")
+                diffs[filename] = f"Error generating diff: {str(e)}"
+                
+        return diffs
+        
+
+    def chat(self, message: str, mode: str = "ask", auto_apply=True) -> Union[str, EditResult]:
         """Send a message to the LLM and get the response"""
+        if mode != "code":
+            auto_apply = False
+        
         try:
             if self.stream:
                 return "".join(self.chat_stream(message))
             
             self.logger.debug(f"Sending message: {message}")
-            self.coder.io.add_to_input_history(message)
+            old_contents = None
+            if not auto_apply:
+                old_contents = self.get_current_files_content()
+            self.coder.io.add_to_input_history(f"/{mode} " + message + ("\n\nDON'T ACTUALLY EDIT THE CODE YOURSELF, THIS IS /ASK MODE." if mode == "ask" else ""))
             response = self.coder.run(with_message=message)
             
             # Check if files were edited
             if self.coder.forge_edited_files:
-                return self._create_edit_result()
+                er = self._create_edit_result(response)
+                if not auto_apply:
+                    new_contents = self.get_edited_files_content(er)
+                    er.diff = self.generate_diffs(old_contents, new_contents)
+                    self.undo_last_edit()
+                return er
                 
             return response
 
@@ -212,6 +315,67 @@ class ForgeWrapper:
                 error=str(e)
             )
             return result
+        
+    def apply_diffs(self, diffs: Dict[str, str]) -> EditResult:
+        """
+        Apply the specified diffs to the files.
+        
+        Args:
+            diffs: Dict mapping filenames to their diff content
+            
+        Returns:
+            EditResult object containing the results of applying the diffs
+        """
+        files_changed = []
+        try:
+            for filename, diff_content in diffs.items():
+                normalized_path = self._normalize_path(filename)
+                
+                # Parse the diff to get the changes
+                current_content = ''
+                try:
+                    with open(normalized_path, 'r', encoding='utf-8') as f:
+                        current_content = f.read()
+                except FileNotFoundError:
+                    # File doesn't exist yet, which is fine for new files
+                    pass
+                    
+                # Apply the diff using patch
+                patcher = patch.PatchSet(diff_content.splitlines(True))
+                
+                try:
+                    # Create directories if they don't exist
+                    os.makedirs(os.path.dirname(normalized_path), exist_ok=True)
+                    
+                    # Apply the patch
+                    with open(normalized_path, 'w', encoding='utf-8') as f:
+                        result = patcher.apply(current_content.splitlines(True))
+                        if result:
+                            f.writelines(result)
+                            files_changed.append(normalized_path)
+                        else:
+                            raise ValueError(f"Failed to apply diff to {normalized_path}")
+                            
+                except Exception as e:
+                    return EditResult(
+                        files_changed=list(files_changed),
+                        success=False,
+                        error=f"Error applying diff to {normalized_path}: {str(e)}"
+                    )
+                    
+            return EditResult(
+                files_changed=list(files_changed),
+                success=True,
+                message="Successfully applied diffs"
+            )
+            
+        except Exception as e:
+            return EditResult(
+                files_changed=list(files_changed),
+                success=False,
+                error=f"Error applying diffs: {str(e)}"
+            )
+         
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the current model"""
