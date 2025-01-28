@@ -201,7 +201,8 @@ class ForgeWrapper:
                 if not auto_apply:
                     new_contents = self.get_edited_files_content(er)
                     er.diff = self.generate_diffs(old_contents, new_contents)
-                    self.undo_last_edit()
+                    if self.auto_commit:
+                        self.undo_last_edit()
                 return er
                 
             return response
@@ -210,19 +211,47 @@ class ForgeWrapper:
             self.logger.error(f"Error during chat: {str(e)}")
             raise
 
-    def chat_stream(self, message: str) -> Generator[str, None, None]:
+    def _prepare_edit_context(self, auto_apply: bool) -> Optional[Dict[str, str]]:
+        """Prepare the editing context by getting current file contents if needed"""
+        if not auto_apply:
+            return self.get_current_files_content()
+        return None
+
+    def _handle_edit_completion(self, old_contents: Optional[Dict[str, str]], auto_apply: bool) -> Optional[EditResult]:
+        """Handle completion of an edit operation"""
+        if not self.coder.forge_edited_files:
+            return None
+            
+        er = self._create_edit_result()
+        if not auto_apply:
+            new_contents = self.get_edited_files_content(er)
+            er.diff = self.generate_diffs(old_contents, new_contents)
+            if self.auto_commit:
+                self.undo_last_edit()
+        return er
+
+    def chat_stream(self, message: str, mode: str = "ask", auto_apply=True) -> Generator[str, None, None]:
         """Stream a chat response from the LLM"""
         if not self.stream:
             raise ValueError("Streaming is disabled. Initialize with stream=True to use chat_stream")
             
         try:
             self.logger.debug(f"Streaming message: {message}")
-            self.coder.io.add_to_input_history(message)
-            yield from self.coder.run_stream(message)
             
-            # Check if files were edited after stream completes
-            if self.coder.forge_edited_files:
-                yield str(self._create_edit_result())
+            # Get initial file contents if needed
+            old_contents = self._prepare_edit_context(auto_apply)
+            
+            self.coder.io.add_to_input_history(f"/{mode} " + message + 
+                ("\n\nDON'T ACTUALLY EDIT THE CODE YOURSELF, THIS IS /ASK MODE." if mode == "ask" else ""))
+            
+            # Stream the response
+            for chunk in self.coder.run_stream(message):
+                yield chunk
+            
+            # Handle edits after streaming completes
+            edit_result = self._handle_edit_completion(old_contents, auto_apply)
+            if edit_result:
+                yield str(edit_result)
                 
         except Exception as e:
             self.logger.error(f"Error during chat stream: {str(e)}")
@@ -315,6 +344,10 @@ class ForgeWrapper:
                 error=str(e)
             )
             return result
+        
+    def _normalize_path(self, path: Union[str, Path]) -> str:
+        """Normalize path to string format used in diffs"""
+        return str(Path(path).resolve())
         
     def apply_diffs(self, diffs: Dict[str, str]) -> EditResult:
         """
