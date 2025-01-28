@@ -1,0 +1,12 @@
+REPO_URLS: https://github.com/rkalahasty/terraformtest1
+REPO_TYPE: mono
+REPO_BRANCH: forge
+# Authentication
+GIT_TOKEN: 
+# Local Settings
+LOCAL_CLONE_PATH: test_repos
+GOOGLE_API_KEY: 
+
+OPENAI_API_KEY: 
+
+PINECONE_API_KEY: 

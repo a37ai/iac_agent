@@ -726,7 +726,10 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             num_cache_warming_pings=args.cache_keepalive_pings,
             suggest_shell_commands=args.suggest_shell_commands,
             chat_language=args.chat_language,
+            git_root=force_git_root,  # Explicitly pass force_git_root as git_root
+            
         )
+        # print(f"cli_main passing force_git_root: {force_git_root}")
     except ValueError as err:
         io.tool_error(str(err))
         return 1

@@ -35,22 +35,25 @@ def initialize_logging(state: Dict[str, Any]) -> str:
     """Initialize logging for a new execution, creating both a full log and a separate status log."""
     global EXECUTION_LOG_FILE, STATUS_LOG_FILE
     
-    # Get the directory where test_repos is located
-    test_repos_parent = Path(state["current_directory"]).parent / "test_repos"
-    if test_repos_parent.exists():
-        log_dir = test_repos_parent.parent / "logs" / "devops_agent"
-    else:
-        # Fallback if test_repos not found
-        log_dir = Path(state["current_directory"]).parent / "logs" / "devops_agent"
+    # Create base logs directory relative to the current working directory
+    base_log_dir = Path.cwd() / "logs"
+    log_dir = base_log_dir / "devops_agent"
     
-    os.makedirs(log_dir, exist_ok=True)
+    # Create all necessary directories
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create forge directory if it doesn't exist
+    forge_dir = Path.cwd() / "test_repos"
+    forge_dir.mkdir(parents=True, exist_ok=True)
+    forge_history_dir = forge_dir / ".forge.input.history"
+    forge_history_dir.mkdir(parents=True, exist_ok=True)
     
     # Create a more descriptive timestamp that includes date and time
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
-    # Create more descriptive filenames
-    EXECUTION_LOG_FILE = os.path.join(log_dir, f"devops_execution_{timestamp}_full.log")
-    STATUS_LOG_FILE = os.path.join(log_dir, f"devops_status_{timestamp}.log")
+    # Create more descriptive filenames with absolute paths
+    EXECUTION_LOG_FILE = str(log_dir / f"devops_execution_{timestamp}_full.log")
+    STATUS_LOG_FILE = str(log_dir / f"devops_status_{timestamp}.log")
     
     # Write initial execution header for the full log
     with open(EXECUTION_LOG_FILE, 'w', encoding='utf-8') as f:
@@ -682,14 +685,22 @@ def start_devops_agent(
     
     workflow = create_devops_workflow()
     
+    # Convert plan steps to PlanStep objects if they're dictionaries
+    normalized_steps = []
+    for step in plan_steps:
+        if isinstance(step, dict):
+            normalized_steps.append(PlanStep(**step))
+        else:
+            normalized_steps.append(step)
+    
     initial_state = DevOpsState(
         messages=[],
-        plan_steps=plan_steps,
+        plan_steps=normalized_steps,  # Use normalized steps
         current_step_index=0,
         completed_steps=[],
         codebase_overview=codebase_overview,
         file_tree=file_tree,
-        current_directory=str(Path(repo_path)),
+        current_directory=str(Path(repo_path).resolve()),
         iam_permissions={},
         credentials={},
         current_step_attempts=0,
@@ -711,7 +722,7 @@ def start_devops_agent(
         with open(EXECUTION_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write("\n=== Execution Summary ===\n")
             f.write(f"Completed at: {datetime.now().isoformat()}\n")
-            f.write(f"Total Steps Completed: {len(final_state['completed_steps'])}/{len(plan_steps)}\n")
+            f.write(f"Total Steps Completed: {len(final_state['completed_steps'])}/{len(normalized_steps)}\n")
             f.write(f"Total Attempts: {final_state['total_attempts']}\n\n")
             
             f.write("Completed Steps:\n")

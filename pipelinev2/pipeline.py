@@ -80,8 +80,8 @@ class Pipeline:
     def __init__(self, repo_path: str):
         """Initialize the pipeline."""
         load_dotenv()
-        self.test_repos_path = Path(os.getenv('LOCAL_CLONE_PATH'))
         self.base_dir = Path(__file__).parent.absolute()
+        self.test_repos_path = self.base_dir / "test_repos"
         self.system_maps_dir = self.base_dir / "system_maps"
         self.system_map = None
         self.subprocess_handler = SubprocessHandler(self.test_repos_path)
@@ -91,14 +91,30 @@ class Pipeline:
         # Ensure system maps directory exists
         self.system_maps_dir.mkdir(exist_ok=True)
         
+    # In Pipeline class initialization
     def initialize_forge(self):
         """Initialize the forge wrapper."""
         if not self.forge:
-            self.forge = ForgeWrapper(
-                auto_commit = True,
-                git_root = str(self.test_repos_path)
-            )
+            # First, ensure any existing .forge.input.history is removed
+            forge_history = self.test_repos_path / ".forge.input.history"
+            if forge_history.is_dir():
+                import shutil
+                shutil.rmtree(forge_history)
+            elif forge_history.exists():
+                forge_history.unlink()
+                
+            # Create necessary directories
+            self.test_repos_path.mkdir(parents=True, exist_ok=True)
             
+            # Create the history file
+            with open(forge_history, 'w') as f:
+                f.write('')
+            
+            self.forge = ForgeWrapper(
+                auto_commit=True,
+                git_root=str(self.test_repos_path)
+            )
+                
     def map_system(self) -> Dict:
         """Map the system using SystemMapper and save the result."""
         self.system_map = self.mapper.generate_system_map()
