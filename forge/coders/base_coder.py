@@ -515,6 +515,8 @@ class Coder:
     fence = fences[0]
 
     def show_pretty(self):
+        return False
+        
         if not self.pretty:
             return False
 
