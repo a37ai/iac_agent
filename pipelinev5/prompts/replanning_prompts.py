@@ -3,6 +3,8 @@ replanning_prompt_template = """You are a DevOps expert modifying an implementat
 Edit Request:
 {edit_request}
 
+The user is on {os} OS.
+
 Original Plan:
 {original_plan}
 

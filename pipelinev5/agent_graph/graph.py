@@ -1,9 +1,5 @@
-import json
 import os
-from langchain_core.runnables import RunnableLambda
-from langgraph.graph import StateGraph, END
-from typing import TypedDict, Annotated
-from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.graph import StateGraph
 
 from agents.planning_workflow_agents import question_generator_agent, plan_creator_agent, plan_validator_agent, end_node
 # from agents.temp_devops import devops_agent, get_next_devops_action, execute_tool
@@ -11,10 +7,12 @@ from agents.devops_agents import get_next_devops_action, execute_tool
 
 from agents.human_replanning_agents import replanning_agent
 from agents.system_mapper_agents import system_mapper_agent
-from agents.router_agents import router_agent
+from agents.router_agents import router_agent, tools_router_agent
+from agents.information_retrieval_agents import documentation_agent
 from agents.github_agents import github_agent
 from agents.memory_agents import memory_agent
 from agents.compression_agents import compression_agent
+# from agents.large_file_analyzer_agents import large_file_analyzer_agent
 
 from prompts.planning_prompts import (
     question_generator_prompt_template,
@@ -25,16 +23,14 @@ from prompts.planning_prompts import (
 from prompts.devops_agent_prompts import devops_prompt_template
 from prompts.replanning_prompts import replanning_prompt_template
 
-
-from states.state import AgentGraphState, get_agent_graph_state, state
-from utils.plan_manager import load_plan
+from states.state import AgentGraphState, state
 from utils.general_helper_functions import load_config
 
 config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')
 load_config(config_path)
 
 def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_endpoint=None, 
-                query=None, codebase_info=None, repo_path=None):
+                query=None, codebase_info=None, repo_path=None, os=None):
     """
     Create the full workflow graph combining planning, replanning, and devops execution.
     """
@@ -49,6 +45,7 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
         "system_mapper",
         lambda state: system_mapper_agent(state)
     )
+
     graph.add_node(
         "router",
         lambda state: router_agent(
@@ -75,7 +72,8 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             prompt=question_generator_prompt_template,
             feedback=lambda: state,
             model=model,
-            server=server
+            server=server,
+            os=os
         )
     )
 
@@ -96,7 +94,8 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             prompt=planning_prompt_template,
             feedback=lambda: state,
             model=model,
-            server=server
+            server=server,
+            os=os
         )
     )
 
@@ -107,7 +106,8 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             prompt=validation_prompt_template,
             feedback=lambda: state,
             model=model,
-            server=server
+            server=server,
+            os=os
         )
     )
 
@@ -118,6 +118,26 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             state=state,
             prompt=replanning_prompt_template,
             feedback=lambda: state,
+            model=model,
+            server=server,
+            os=os
+        )
+    )
+
+    graph.add_node(
+        "tools_router",
+        lambda state: tools_router_agent(
+            state=state,
+            model=model,
+            server=server,
+            os=os
+        )
+    )
+
+    graph.add_node(
+        "documentation",
+        lambda state: documentation_agent(
+            state=state,
             model=model,
             server=server
         )
@@ -130,7 +150,8 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             state=state,
             prompt=devops_prompt_template,
             model=model,
-            server=server
+            server=server,
+            os=os
         )
     )
     
@@ -152,11 +173,12 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
     graph.add_edge("memory", "system_mapper")
     graph.add_edge("system_mapper", "router")
     graph.add_edge("github_agent", "question_generator")
-    graph.add_edge("question_generator", "compression")
     graph.add_edge("compression", "plan_creator")
     graph.add_edge("plan_creator", "plan_validator")
-    graph.add_edge("execute_tool", "get_devops_action")
-
+    graph.add_edge("documentation", "tools_router")
+    # graph.add_edge("execute_tool", "get_devops_action")
+    graph.add_edge("execute_tool", "tools_router")
+    
     # Conditional edges for router
     graph.add_conditional_edges(
         "router",
@@ -167,6 +189,15 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
         )
     )
 
+    graph.add_conditional_edges(
+        "question_generator",
+        lambda state: (
+            "compression" 
+            if len(state.get("file_analyses", {})) > 20
+            else "plan_creator"
+        )
+    )
+    
     # Conditional edges for plan validation
     graph.add_conditional_edges(
         "plan_validator",
@@ -185,6 +216,15 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
         lambda state: (
             "plan_validator"
             if state.get("edit_request") and state.get("edit_request").get("request") != "done"
+            else "tools_router"  # Changed from "get_devops_action" to "router"
+        )
+    )
+
+    graph.add_conditional_edges(
+        "tools_router",
+        lambda state: (
+            "documentation" 
+            if state.get("needs_documentation", False)
             else "get_devops_action"
         )
     )
@@ -239,7 +279,13 @@ def initialize_state(query: str, repo_path: str) -> AgentGraphState:
         "github_repo": github_repo,
         "github_info": None,
         "needs_github": False,
-        "github_focus": []
+        "github_focus": [],
+
+        "router_response": [],
+        "needs_documentation": False,
+        "documentation_query": None,
+        "retrieved_documentation": [],
+        "documentation_agent_response": []
     })
     return initial_state
 

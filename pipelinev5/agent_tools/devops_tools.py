@@ -1,11 +1,15 @@
 import json
 import time
 import select
+import sys
+import termios
+import signal
 from pathlib import Path
 import subprocess
+import tty
 import os
 import shutil
-import requests
+import fcntl
 from prompts.tools_prompts import LLM_VALIDATION_TEMPLATE
 from typing import Dict, List, Optional, Any
 from prompts.devops_agent_prompts import DECISION_SUMMARY_PROMPT, STEP_SUMMARY_PROMPT
@@ -87,11 +91,15 @@ def format_knowledge_sequence(knowledge_sequence: List[Dict], step_description: 
         text += f"Type: {entry['action_type']}\n"
         text += f"Input: {entry['action']}\n"
         text += f"Result: {entry['result']['status']}\n"
+        
+        # Handle output with no truncation
         if entry['result'].get('output'):
-            shortened = entry['result']['output'][:200]
-            text += f"Output: {shortened}...\n"
+            text += f"Output: {entry['result']['output']}\n"
+            
+        # Handle error with no truncation
         if entry['result'].get('error'):
             text += f"Error: {entry['result']['error']}\n"
+            
         text += "\n"
     return text
 
@@ -108,6 +116,7 @@ def format_completed_steps(completed_steps: List[Dict]) -> str:
             text += f"Summary: {s['summary'].get('summary', 'No summary available')}\n"
         text += "\n"
     return text
+
 
 ##############################################################################
 #                        Summarization for Step
@@ -208,136 +217,176 @@ class DevOpsTools:
     #  Simple command and code execution
     ########################################################################
         
+
     def execute_command(
         self,
-        command: str,
-        timeout: Optional[int] = 20,
+        command: str, 
+        timeout: int = 30,
         cwd: Optional[str] = None
     ) -> ToolResult:
         """
-        Execute a shell command in a subprocess with proper interactive input support.
-        Uses non-blocking I/O to handle input requests naturally.
+        Execute a shell command with support for interactive input, timeout,
+        and working-directory support. This version preserves your original
+        sudo detection/modification and error handling while using a pseudoterminal (pty)
+        to correctly handle commands that disable echo (for hidden input like passwords).
+        
+        When echo is enabled, an inactivity timeout is enforced. When echo is disabled,
+        the timeout is suspended so the process will wait indefinitely for input.
         """
         try:
+            if not command:
+                return ToolResult(status="error", error="No command provided")
+            
+            # --- Preserve Original Sudo Modification Logic ---
+            def is_sudo_command(cmd: str) -> bool:
+                """Check if the command starts with sudo but doesn't already have -S flag"""
+                return cmd.strip().startswith("sudo") and "-S" not in cmd
+
+            def modify_sudo_command(cmd: str) -> str:
+                """Add -S flag to sudo commands if not already present"""
+                if is_sudo_command(cmd):
+                    # Split after 'sudo' to preserve all other flags/args
+                    parts = cmd.split("sudo", 1)
+                    return f"sudo -S{parts[1]}"
+                return cmd
+
+            # Modify command if it's a sudo command.
+            command = modify_sudo_command(command)
+            
             effective_cwd = cwd if cwd else str(self.working_directory)
-            print(colored(f"\nExecuting command: {command}", 'yellow'))
-            
-            # Create process with pipes
-            process = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE,
-                cwd=str(effective_cwd)
-            )
-            
-            output_buffer = []
-            current_line = []
-            start_time = time.time()
-            
-            def read_stream(stream):
-                """Helper to read from a stream."""
-                try:
-                    return stream.read1().decode('utf-8')
-                except (IOError, BlockingIOError):
-                    return None
-            
-            # Set non-blocking mode
-            import fcntl
-            import os
-            for stream in [process.stdout, process.stderr]:
-                flags = fcntl.fcntl(stream, fcntl.F_GETFL)
-                fcntl.fcntl(stream, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-            
-            while True:
-                # Check timeout
-                if timeout and time.time() - start_time > timeout:
-                    process.kill()
+            print(f"\nExecuting command: {command}")
+            print(f"Working directory: {effective_cwd}")
+            # --- End Original Sudo/Directory Logic ---
+
+            # Save the original terminal settings for sys.stdin.
+            orig_term_settings = termios.tcgetattr(sys.stdin.fileno())
+            try:
+                # Put sys.stdin into raw mode to capture keystrokes immediately.
+                tty.setraw(sys.stdin.fileno())
+                
+                # Create a new pseudoterminal pair.
+                master_fd, slave_fd = os.openpty()
+                # Duplicate the slave fd so we can later query its terminal attributes.
+                slave_fd_dup = os.dup(slave_fd)
+                
+                # Spawn the subprocess with the slave fd as its stdin, stdout, and stderr.
+                # preexec_fn=os.setsid ensures the child gets its own process group.
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    cwd=effective_cwd,
+                    preexec_fn=os.setsid
+                )
+                
+                # We no longer need the original slave_fd in the parent.
+                os.close(slave_fd)
+                
+                # Set the master fd to non-blocking mode.
+                flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+                fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                output_buffer = []
+                last_activity = time.time()
+                
+                # Main loop: relay output from the child (via master_fd) to sys.stdout,
+                # and relay user keystrokes from sys.stdin to the child.
+                while True:
+                    # Break out if the process has ended.
+                    if process.poll() is not None:
+                        break
+
+                    now = time.time()
+                    # --- New: Query the child’s terminal echo setting ---
+                    try:
+                        slave_attrs = termios.tcgetattr(slave_fd_dup)
+                        # termios attributes: index 3 is lflag; if ECHO is set, echo is enabled.
+                        echo_enabled = bool(slave_attrs[3] & termios.ECHO)
+                    except Exception:
+                        echo_enabled = True  # Default to enforcing timeout.
+
+                    # Enforce timeout only if echo is enabled.
+                    if echo_enabled and timeout and (now - last_activity) > timeout:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        return ToolResult(status="error", error=f"Command timed out after {timeout} seconds of inactivity")
+
+                    # Use select to wait for data from either the child process or the user.
+                    ready_fds, _, _ = select.select([master_fd, sys.stdin], [], [], 0.1)
+                    for fd in ready_fds:
+                        if fd == master_fd:
+                            # Read output from the child process.
+                            try:
+                                data = os.read(master_fd, 1024)
+                            except OSError:
+                                data = b""
+                            if data:
+                                decoded = data.decode(errors="ignore")
+                                sys.stdout.write(decoded)
+                                sys.stdout.flush()
+                                output_buffer.append(decoded)
+                                last_activity = now
+                        elif fd == sys.stdin:
+                            try:
+                                # Read user input from sys.stdin. In raw mode, this is character-by-character.
+                                user_input = os.read(sys.stdin.fileno(), 1024)
+                                if user_input:
+                                    # Relay the user input to the child.
+                                    os.write(master_fd, user_input)
+                                    last_activity = now
+                                    # If echo is disabled (e.g. password prompt), do not display the actual input.
+                                    if not echo_enabled:
+                                        sys.stdout.write("*****")
+                                        sys.stdout.flush()
+                                        output_buffer.append("*****")
+                                    # Otherwise, if echo is enabled, let the child echo the characters.
+                            except OSError:
+                                pass
+
+                # After the main loop, attempt to flush any remaining output.
+                while True:
+                    try:
+                        rlist, _, _ = select.select([master_fd], [], [], 0.1)
+                        if master_fd in rlist:
+                            data = os.read(master_fd, 1024)
+                            if not data:
+                                break
+                            decoded = data.decode(errors="ignore")
+                            sys.stdout.write(decoded)
+                            sys.stdout.flush()
+                            output_buffer.append(decoded)
+                        else:
+                            break
+                    except Exception:
+                        break
+
+                retcode = process.poll()
+                output = "".join(output_buffer)
+                if retcode == 0:
+                    return ToolResult(status="success", output=output)
+                else:
+                    # Note: since stderr and stdout are merged in the pty, we just report the exit code.
                     return ToolResult(
                         status="error",
-                        error=f"Command timed out after {timeout} seconds"
+                        error=f"Command failed with exit code {retcode}",
+                        output=output if output else None
                     )
-
-                # Check for output
-                readable, writable, _ = select.select(
-                    [process.stdout, process.stderr],
-                    [process.stdin],
-                    [],
-                    0.1
-                )
-
-                # Handle output
-                for stream in readable:
-                    data = read_stream(stream)
-                    if data:
-                        if stream == process.stderr:
-                            print(colored(data, 'red'), end='', flush=True)
-                        else:
-                            print(data, end='', flush=True)
-                        output_buffer.append(data)
-
-                # Check if process has finished
-                retcode = process.poll()
-                if retcode is not None:
-                    # Get any remaining output
-                    try:
-                        stdout, stderr = process.communicate(timeout=0.1)
-                        if stdout:
-                            stdout = stdout.decode('utf-8')
-                            print(stdout, end='', flush=True)
-                            output_buffer.append(stdout)
-                        if stderr:
-                            stderr = stderr.decode('utf-8')
-                            print(colored(stderr, 'red'), end='', flush=True)
-                            output_buffer.append(stderr)
-                    except subprocess.TimeoutExpired:
-                        pass
-                    break
-
-                # Check if input is needed
-                if not readable:
-                    try:
-                        user_input = input()
-                        if user_input.strip().lower() == 'exit':
-                            process.kill()
-                            return ToolResult(
-                                status="success",
-                                output=''.join(output_buffer)
-                            )
-                        process.stdin.write(user_input.encode('utf-8') + b'\n')
-                        process.stdin.flush()
-                        output_buffer.append(f"{user_input}\n")
-                        start_time = time.time()  # Reset timeout after input
-                    except (EOFError, KeyboardInterrupt):
-                        process.kill()
-                        return ToolResult(
-                            status="error",
-                            error="Input interrupted"
-                        )
-
-                time.sleep(0.01)  # Prevent CPU thrashing
-
-            output = ''.join(output_buffer)
-            if retcode == 0:
-                return ToolResult(
-                    status="success",
-                    output=output
-                )
-            else:
-                return ToolResult(
-                    status="error",
-                    error=f"Command failed with exit code {retcode}",
-                    output=output
-                )
-
+            finally:
+                # Restore the original terminal settings.
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, orig_term_settings)
+                # Close the file descriptors.
+                try:
+                    os.close(master_fd)
+                except Exception:
+                    pass
+                try:
+                    os.close(slave_fd_dup)
+                except Exception:
+                    pass
         except Exception as e:
-            import traceback
-            return ToolResult(
-                status="error",
-                error=f"Error executing command: {str(e)}\n{traceback.format_exc()}"
-            )
-    
+            return ToolResult(status="error", error=f"Error executing command: {str(e)}")
+        
     def modify_code(self, code: str, instructions: str, cwd: Optional[str] = None) -> "ToolResult":
         """Execute code through Forge's chat interface, returning a ToolResult."""
         if self.forge is None:
@@ -351,15 +400,21 @@ class DevOpsTools:
             
             message = f"""Please execute the following specification to these instructions:
 
-Instructions: {instructions}
+                    Instructions: {instructions}
 
-Code:
+                    Remember that all the modifications you make should never be example modifications.
+                    They should always be real modifications that are relevant to the instructions.
+                    The code you add or change should be immediately usable, runnalbe and deployable with no further changes.
 
-python
-{code}
+                    For example, you should never put in example code or example ids, because those make it so that the code isn't isntantly usable and reuqires further changes.
+                    Code:
 
-Please make any necessary modifications and execute the code.
-"""
+                    python
+                    {code}
+
+                    Please make any necessary modifications and execute the code.
+            """
+
             forge_response = self.forge.chat_and_get_updates(message)
             
             if isinstance(forge_response, dict):
@@ -411,20 +466,35 @@ Please make any necessary modifications and execute the code.
     ) -> "ToolResult":
         """Create or overwrite a file with the given content."""
         try:
+            if not file_path:
+                return ToolResult(
+                    status="error",
+                    error="No file path provided"
+                )
+            
             effective_cwd = Path(cwd if cwd else str(self.working_directory)).resolve()
             full_path = Path(os.path.join(effective_cwd, file_path)).resolve()
+            
+            # Ensure parent directories exist
             full_path.parent.mkdir(parents=True, exist_ok=True)
             
+            # Write the content
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
             if mode is not None:
                 full_path.chmod(mode)
             
-            return ToolResult(status="success", output=f"Created file: {file_path}")
+            return ToolResult(
+                status="success",
+                output=f"Successfully created file {file_path} with content:\n{content}"
+            )
         except Exception as e:
-            return ToolResult(status="error", error=str(e))
-    
+            return ToolResult(
+                status="error",
+                error=f"Error creating file: {str(e)}"
+            )
+        
     def copy_template(
         self,
         template_path: str,
@@ -587,77 +657,73 @@ Please make any necessary modifications and execute the code.
                         """
         return self._llm_validation_check(prompt_text)
     
+    # def validate_code_changes(self, code: str, instructions: str, expected_changes: str) -> "ToolResult":
+    #     """
+    #     Use an LLM to compare the actual code changes to the expected changes.
+    #     Return 'success' if it matches, else 'error'.
+    #     """
+    #     prompt_text = f"""We have code changes and an expected set of changes.
+    #                     Instructions that were followed: {instructions}
+
+    #                     Expected changes:
+    #                     {expected_changes}
+
+    #                     Actual code changes:
+    #                     {code}
+
+    #                     Check whether the content matches the expected content.
+    #                     """
+    #     return self._llm_validation_check(prompt_text)
+    
     def validate_code_changes(self, code: str, instructions: str, expected_changes: str) -> "ToolResult":
         """
         Use an LLM to compare the actual code changes to the expected changes.
         Return 'success' if it matches, else 'error'.
         """
-        prompt_text = f"""We have code changes and an expected set of changes.
-                        Instructions that were followed: {instructions}
+        try:
+            # Check if code is a tuple containing EditResult
+            if isinstance(code, tuple):
+                edit_result, file_contents = code
+                # Extract the modified files content
+                code = "\n".join(file_contents.values())
+            elif isinstance(code, dict):
+                # If code is a dictionary of file contents
+                code = "\n".join(code.values())
 
-                        Expected changes:
-                        {expected_changes}
+            prompt_text = f"""We have code changes and an expected set of changes.
+                            Instructions that were followed: {instructions}
 
-                        Actual code changes:
-                        {code}
+                            Expected changes:
+                            {expected_changes}
 
-                        Check whether the content matches the expected content.
-                        """
-        return self._llm_validation_check(prompt_text)
-    
-    def validate_code_changes(self, code: str, instructions: str, expected_changes: str) -> "ToolResult":
-            """
-            Use an LLM to compare the actual code changes to the expected changes.
-            Return 'success' if it matches, else 'error'.
-            """
-            try:
-                # First check if the input is JSON formatted
-                if isinstance(code, str) and code.startswith('{'):
-                    try:
-                        parsed = json.loads(code)
-                        if isinstance(parsed, dict):
-                            # Extract actual code from JSON if it's in the expected format
-                            code = parsed.get('code', code)
-                            instructions = parsed.get('instructions', instructions)
-                            expected_changes = parsed.get('expected_changes', expected_changes)
-                    except json.JSONDecodeError:
-                        pass  # If JSON parsing fails, use the original strings
+                            Actual code changes:
+                            {code}
 
-                prompt_text = f"""We have code changes and an expected set of changes.
-                                Instructions that were followed: {instructions}
+                            Analyze whether the code matches the expected changes, focusing on:
+                            1. Variable names and references
+                            2. Resource configurations
+                            3. Overall structure and syntax
 
-                                Expected changes:
-                                {expected_changes}
+                            Validation criteria:
+                            - All variable references should be consistent
+                            - Code should follow proper syntax for its language
+                            - Changes should match the expected modifications
+                            """
+            
+            result = self._llm_validation_check(prompt_text)
+            
+            if result.status == "error":
+                result.error = f"Code validation failed: {result.error}"
+            else:
+                result.output = f"Code validation passed: {result.output}"
+            
+            return result
 
-                                Actual code changes:
-                                {code}
-
-                                Analyze whether the code matches the expected changes, focusing on:
-                                1. Variable names and references
-                                2. Resource configurations
-                                3. Overall structure and syntax
-
-                                Validation criteria:
-                                - All variable references should be consistent
-                                - Code should follow proper syntax for its language
-                                - Changes should match the expected modifications
-                                """
-                
-                result = self._llm_validation_check(prompt_text)
-                
-                if result.status == "error":
-                    # Add more context to the error message
-                    result.error = f"Code validation failed: {result.error}"
-                else:
-                    result.output = f"Code validation passed: {result.output}"
-                
-                return result
-
-            except Exception as e:
-                return ToolResult(
-                    status="error",
-                    error=f"Error during code validation: {str(e)}"
-                )
+        except Exception as e:
+            return ToolResult(
+                status="error",
+                error=f"Error during code validation: {str(e)}"
+            )
             
     def validate_file_output(self, file_content: str, expected_content: str) -> "ToolResult":
         """
@@ -677,64 +743,32 @@ Please make any necessary modifications and execute the code.
         
         return self._llm_validation_check(prompt_text)
 
-    
-    def retrieve_documentation(self, query: str) -> "ToolResult":
-        """
-        Retrieve documentation or relevant information using the Perplexity API.
-
-        :param query: The query string for which to retrieve documentation.
-        :return: ToolResult with API response or error.
-        """
-        api_token = os.getenv("PERPLEXITY_API_TOKEN")
-
-        if not api_token:
-            return ToolResult(
-                status="error",
-                error="API token not found in environment variables."
-            )
-
-        api_url = "https://api.perplexity.ai/chat/completions" 
-
-        payload = {
-            "model": "llama-3.1-sonar-small-128k-online",
-            "messages": [
-                {
-                    "role": "system", 
-                    "content": "Be precise and concise."
-                },
-                {
-                    "role": "user",
-                    "content": query
-                }
-            ],
-            "max_tokens": "Optional",
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "search_domain_filter": ["perplexity.ai"],
-            "return_images": False,
-            "return_related_questions": False,
-            "search_recency_filter": "month",
-            "top_k": 0,
-            "stream": False,
-            "presence_penalty": 0,
-            "frequency_penalty": 1
-        }
-        headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json"
-        }
-
+    def rollback_commits(self, num_commits: int = 1) -> ToolResult:
+        """Roll back the specified number of commits."""
         try:
-            response = requests.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
+            if not hasattr(self, 'forge') or not self.forge:
+                return ToolResult(
+                    status="error",
+                    error="Forge not initialized"
+                )
+                
+            result = self.forge.rollback_commits(num_commits)
+            
+            if result.success:
+                return ToolResult(
+                    status="success",
+                    output=f"Successfully rolled back {num_commits} commit(s)"
+                )
+            else:
+                return ToolResult(
+                    status="error",
+                    error=result.error or "Failed to roll back commits"
+                )
+                
+        except Exception as e:
             return ToolResult(
-                status="success",
-                output=json.dumps(response.json())
-            )
-        except requests.exceptions.RequestException as e:
-            return ToolResult(
-                status="error",
-                error=str(e)
+                status="error", 
+                error=f"Error during rollback: {str(e)}"
             )
                 
     def end_step(self) -> "ToolResult":

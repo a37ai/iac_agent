@@ -2,7 +2,7 @@
 
 import os
 import requests
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from termcolor import colored
 from states.state import ToolResult
 from utils.general_helper_functions import load_config

@@ -3,7 +3,7 @@ from typing import Dict
 from termcolor import colored
 from langchain_core.messages import SystemMessage
 from ai_models.openai_models import get_open_ai_json
-from ai_models.deepseek_models import get_deepseek_ai_json
+# from ai_models.deepseek_models import get_deepseek_ai_json
 from states.state import AgentGraphState
 from prompts.compression_prompts import COMPRESSION_AGENT_PROMPT
 

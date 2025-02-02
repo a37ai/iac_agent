@@ -361,3 +361,37 @@ class ForgeWrapper:
                 self.logger.error(f"Error reading file {file}: {str(e)}")
                 
         return contents 
+
+    def rollback_commits(self, num_commits: int = 1) -> EditResult:
+        """Roll back the specified number of commits."""
+        try:
+            files_changed = set()
+            
+            for _ in range(num_commits):
+                # Get files from current commit before undoing
+                if hasattr(self.coder.repo, "head"):
+                    for item in self.coder.repo.head.commit.stats.files:
+                        files_changed.add(self.coder.abs_root_path(item))
+                
+                # Undo commit
+                self.coder.commands.cmd_undo(None)
+                
+                # Remove added files
+                for file_path in files_changed:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+            
+            result = EditResult(
+                files_changed=list(files_changed),
+                commit_hash=self.coder.last_forge_commit_hash,
+                success=True
+            )
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error during rollback: {str(e)}")
+            return EditResult(
+                files_changed=[],
+                success=False,
+                error=str(e)
+            )

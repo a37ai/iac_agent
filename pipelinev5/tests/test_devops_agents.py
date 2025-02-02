@@ -569,3 +569,89 @@ def test_execute_terraform_command(monkeypatch, base_state):
     
 #     assert result_state["knowledge_sequence"][-1]["action_type"] == "validate_command_output"
 #     assert result_state["knowledge_sequence"][-1]["result"]["status"] == "success"
+
+def test_rollback_commits(base_state):
+    """Test commit rollback functionality."""
+    from pathlib import Path
+    
+    repo_path = Path(base_state["current_directory"])
+    forge = base_state["forge"]
+    
+    # Create initial file
+    forge.chat_and_get_updates("""
+    Please create file1.txt with this content:
+    Initial content
+    """)
+    
+    # Create second file
+    forge.chat_and_get_updates("""
+    Please create file2.txt with this content:
+    Second file content
+    """)
+    
+    # Add these files to chat context
+    forge.add_file(str(repo_path / "file1.txt"))
+    forge.add_file(str(repo_path / "file2.txt"))
+    
+    # Modify first file
+    forge.chat_and_get_updates("""
+    Please modify file1.txt to contain:
+    Modified content
+    """)
+    
+    # Verify file content before rollback
+    assert (repo_path / "file1.txt").read_text().strip() == "Modified content"
+    
+    # Roll back one commit
+    decision = LLMDecision(
+        type="rollback_commits",
+        description="Rolling back last commit",
+        content="1",
+        reasoning="Testing rollback functionality"
+    )
+    
+    base_state["current_step_context"]["last_decision"] = decision.dict()
+    result_state = execute_tool(base_state)
+    
+    # Verify results
+    assert result_state["knowledge_sequence"][-1]["action_type"] == "rollback_commits"
+    assert result_state["knowledge_sequence"][-1]["result"]["status"] == "success"
+    assert (repo_path / "file1.txt").read_text().strip() == "Initial content"
+
+def test_rollback_multiple_commits(base_state):
+    """Test rolling back multiple commits."""
+    from pathlib import Path
+    import shutil
+    
+    repo_path = Path(base_state["current_directory"])
+    
+    # Cleanup any existing files
+    for file in repo_path.glob("file*.txt"):
+        file.unlink()
+    
+    forge = base_state["forge"]
+    
+    # Create files sequentially
+    for i in range(3):
+        forge.chat_and_get_updates(f"""
+        Please create file{i}.txt with this content:
+        Content {i}
+        """)
+        forge.add_file(str(repo_path / f"file{i}.txt"))
+    
+    # Roll back two commits
+    decision = LLMDecision(
+        type="rollback_commits",
+        description="Rolling back two commits",
+        content="2",
+        reasoning="Testing multiple commit rollback"
+    )
+    
+    base_state["current_step_context"]["last_decision"] = decision.dict()
+    result_state = execute_tool(base_state)
+    
+    # Verify rollback
+    assert result_state["knowledge_sequence"][-1]["action_type"] == "rollback_commits"
+    assert result_state["knowledge_sequence"][-1]["result"]["status"] == "success"
+    assert (repo_path / "file0.txt").exists()
+    assert not (repo_path / "file2.txt").exists()

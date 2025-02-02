@@ -4,9 +4,9 @@ from termcolor import colored
 from datetime import datetime
 from pathlib import Path
 from langchain_core.messages import SystemMessage
-from ai_models.openai_models import get_open_ai_json
+from ai_models.openai_models import get_open_ai_json, get_open_ai_json_v2
+from ai_models.deepseek_models import get_deepseek_groq_json
 from states.state import AgentGraphState, LLMDecision, ToolResult
-from utils.general_helper_functions import check_for_content
 from utils.logging_helper_functions import log_interaction, log_status_update
 from prompts.devops_agent_prompts import devops_prompt_template
 from agent_tools.devops_tools import (
@@ -17,7 +17,7 @@ from agent_tools.devops_tools import (
     DevOpsTools
 )
 
-def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template, model=None, server=None, feedback=None) -> AgentGraphState:
+def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template, model=None, server=None, feedback=None, os=None) -> AgentGraphState:
     """
     Determine the next action for the current step in the DevOps workflow.
     This function handles decision-making only, with execution handled separately.
@@ -72,7 +72,13 @@ def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template
                 file_contents
             ),
             "current_directory": state["current_directory"],
-            "credentials": json.dumps(state.get("credentials", {}), indent=2)
+            "credentials": json.dumps(state.get("credentials", {}), indent=2),
+            # Add retrieved documentation directly in the context
+            "retrieved_documentation": "\n".join(
+                f"Query: {doc['query']}\nInformation:\n{doc['info']}\n"
+                for doc in state.get("retrieved_documentation", [])
+            ) or "No relevant documentation retrieved.",
+            "os": os
         }
         
         # Create the full system prompt by formatting the template with the context
@@ -87,7 +93,9 @@ def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template
 
         # Get LLM decision
         if server == 'openai':
-            llm = get_open_ai_json(model=model)
+            # llm = get_open_ai_json(model=model)
+            # llm = get_open_ai_json_v2()
+            llm = get_deepseek_groq_json()
         
         ai_msg = llm.invoke(messages)
         response = ai_msg.content
@@ -165,35 +173,6 @@ def _format_codebase_context(overview: str, file_tree: str, file_contents: Dict)
                 {json.dumps(file_contents, indent=2) if file_contents else 'No file contents available'}
             """
 
-def _handle_step_completion(state: AgentGraphState):
-    """Handle completion of current step and prepare for next step."""
-    print(colored("DevOps Agent 🤖: Completing current step", 'green'))
-    
-    # Generate step summary
-    step_summary = summarize_step_knowledge(
-        state["knowledge_sequence"],
-        state["plan_steps"][state["current_step_index"]].description
-    )
-    
-    # Record completion
-    completed_step = {
-        "description": state["plan_steps"][state["current_step_index"]].description,
-        "status": "completed",
-        "summary": step_summary,
-        "result": {"status": "forced_end"},
-        "tool_used": "none",
-        "timestamp": datetime.now().isoformat()
-    }
-    state["completed_steps"].append(completed_step)
-    
-    # Move to next step
-    state["current_step_index"] += 1
-    
-    # Reset step state
-    state["current_step_attempts"] = 0
-    state["current_step_context"] = {}
-    state["knowledge_sequence"] = []
-
 def execute_tool(state: AgentGraphState) -> AgentGraphState:
     """
     Execute a tool based on the LLM's last decision.
@@ -243,6 +222,7 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
             "create_file": "create_file",
             "copy_template": "copy_template",
             "validate_command_output": "validate_command_output",
+            "rollback_commits": "rollback_commits",
             "end": "end_step"
         }
         
@@ -269,7 +249,10 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
                 inputs["instructions"] = decision.description
             elif decision.type == "execute_command":
                 print(colored("\nPreparing command execution...", 'yellow'))
-                inputs["command"] = decision.content
+                if not hasattr(decision, 'command') or not decision.command:
+                    inputs["command"] = decision.content
+                else:
+                    inputs["command"] = decision.command
             elif decision.type == "retrieve_documentation":
                 print(colored("\nPreparing documentation retrieval...", 'yellow'))
                 inputs = {"query": decision.content} 
@@ -288,12 +271,18 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
                 inputs["expected_behavior"] = decision.description
                 inputs["validation_criteria"] = []
             elif decision.type == "validate_code_changes":
-                print(colored("\nPreparing code validation...", 'yellow'))
-                inputs["code"] = decision.content
-                inputs["instructions"] = decision.description
-                inputs["expected_changes"] = ""
-                print(colored("Code to validate:", 'yellow'))
-                print(decision.content)
+                # Find the last modify_code result in knowledge_sequence
+                last_code_change = None
+                for entry in reversed(state["knowledge_sequence"]):
+                    if entry["action_type"] == "modify_code" and entry["result"]["status"] == "success":
+                        last_code_change = entry["result"]["output"]
+                        break
+                
+                inputs = {
+                    "code": last_code_change if last_code_change else decision.content,
+                    "instructions": decision.description,
+                    "expected_changes": decision.content or ""
+                }
             elif decision.type == "validate_file_output":
                 print(colored("\nPreparing file output validation...", 'yellow'))
                 inputs["file_content"] = decision.content
@@ -306,13 +295,24 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
                 print(colored("\nPreparing file deletion...", 'yellow'))
                 inputs["file_path"] = decision.content
             elif decision.type == "create_file":
-                print(colored("\nPreparing file creation...", 'yellow'))
-                inputs["file_path"] = decision.content
-                inputs["content"] = decision.description
+                if not decision.file_path:
+                    # If file_path wasn't specified, we have an error
+                    result = ToolResult(
+                        status="error",
+                        error="No file path specified for create_file operation"
+                    )
+                else:
+                    inputs = {
+                        "file_path": decision.file_path,
+                        "content": decision.content or ""
+                    }
             elif decision.type == "copy_template":
                 print(colored("\nPreparing template copy...", 'yellow'))
                 inputs["template_path"] = decision.content
-            
+            elif decision.type == "rollback_commits":
+                print(colored("\nPreparing commit rollback...", 'yellow'))
+                inputs["num_commits"] = int(decision.content) if decision.content else 1
+                        
             # Execute tool with more detailed error handling
             print(colored("\nExecuting tool...", 'yellow'))
             result = tool_func(**inputs)
@@ -413,81 +413,3 @@ def _initialize_tools(state: AgentGraphState) -> DevOpsTools:
         print(colored("DevOps Agent 🤖: Initialized tools", 'green'))
         
     return state["tools"]
-
-# def _get_tool_function(tools: DevOpsTools, tool_type: str):
-#     """Get the appropriate tool function based on decision type."""
-#     tool_map = {
-#         "modify_code": "modify_code",
-#         "execute_command": "execute_command",
-#         "retrieve_documentation": "retrieve_documentation",
-#         "ask_human_for_information": "ask_human_for_information",
-#         "ask_human_for_intervention": "ask_human_for_intervention",
-#         "run_file": "run_file",
-#         "validate_output": "validate_output",
-#         "validate_code_changes": "validate_code_changes",
-#         "validate_file_output": "validate_file_output",
-#         "delete_file": "delete_file",
-#         "create_file": "create_file",
-#         "copy_template": "copy_template",
-#         "validate_command_output": "validate_command_output"
-#     }
-    
-#     tool_func_name = tool_map.get(tool_type)
-#     if not tool_func_name:
-#         raise ValueError(f"Unknown tool type: {tool_type}")
-        
-#     tool_func = getattr(tools, tool_func_name, None)
-#     if not tool_func:
-#         raise ValueError(f"Tool function not found: {tool_func_name}")
-        
-#     return tool_func
-
-# def _prepare_tool_inputs(decision: LLMDecision) -> Dict:
-#     """Prepare the appropriate inputs for each tool type."""
-#     tool_inputs = {
-#         "modify_code": lambda d: {"code": d.content, "instructions": d.description},
-#         "execute_command": lambda d: {"command": d.content},
-#         "retrieve_documentation": lambda d: {"query": d.content},
-#         "ask_human_for_information": lambda d: {"question": d.content},
-#         "ask_human_for_intervention": lambda d: {"explanation": d.content},
-#         "run_file": lambda d: {"file_path": d.content},
-#         "validate_output": lambda d: {
-#             "output": d.content,
-#             "expected_behavior": d.description,
-#             "validation_criteria": []
-#         },
-#         "validate_code_changes": lambda d: {
-#             "code": d.content,
-#             "instructions": d.description,
-#             "expected_changes": ""
-#         },
-#         "validate_file_output": lambda d: {
-#             "file_content": d.content,
-#             "expected_content": ""
-#         },
-#         "validate_command_output": lambda d: {
-#             "command_output": d.content,
-#             "expected_behavior": d.description
-#         },
-#         "delete_file": lambda d: {"file_path": d.content},
-#         "create_file": lambda d: {"file_path": d.content, "content": ""},
-#         "copy_template": lambda d: {"template_path": d.content}
-#     }
-    
-#     input_generator = tool_inputs.get(decision.type)
-#     if not input_generator:
-#         raise ValueError(f"No input generator for tool type: {decision.type}")
-        
-#     return input_generator(decision)
-
-# def determine_next_devops_step(state: AgentGraphState) -> str:
-#     """Determine the next step in the DevOps workflow."""
-#     if state["current_step_index"] >= len(state["plan_steps"]):
-#         print(colored("DevOps Agent 🤖: Workflow complete", 'green'))
-#         return "end"
-        
-#     if not state["current_step_context"].get("last_decision"):
-#         print(colored("DevOps Agent 🤖: No last decision, continuing", 'yellow'))
-#         return "continue"
-        
-#     return "continue"

@@ -1,9 +1,6 @@
-from typing import List, Dict, Any
-from pydantic import BaseModel
+from typing import List
 import json
-import os
 from pathlib import Path
-from typing import Literal
 from states.state import PlanStep
 
 def save_plan(plan_steps: List[PlanStep], repo_path: str) -> None:

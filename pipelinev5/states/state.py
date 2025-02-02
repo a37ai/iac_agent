@@ -10,7 +10,6 @@ import pinecone
 from langchain_openai import OpenAIEmbeddings
 
 
-
 # Base Models
 class Memory(BaseModel):
     type: str
@@ -43,10 +42,48 @@ class ValidationContext(BaseModel):
     iteration_context: Dict[int, Dict] = {}
 
 class LLMDecision(BaseModel):
+    """Flattened LLM decision that matches the schema required in the DevOps agent prompt."""
     type: str
     description: str
-    content: str
     reasoning: str
+    # Tool-specific fields
+    # modify_code
+    code: Optional[str] = None 
+    instructions: Optional[str] = None
+    # execute_command
+    command: Optional[str] = None
+    completion_patterns: Optional[List[str]] = None
+    error_patterns: Optional[List[str]] = None
+    input_patterns: Optional[Dict[str, str]] = None
+    timeout: Optional[int] = None
+    # Common optional field
+    cwd: Optional[str] = None
+    # retrieve_documentation
+    query: Optional[str] = None
+    domain_filter: Optional[List[str]] = None
+    # ask_human tools
+    question: Optional[str] = None
+    explanation: Optional[str] = None
+    # run_file
+    file_path: Optional[str] = None
+    args: Optional[List[str]] = None
+    # validation tools
+    output: Optional[str] = None
+    expected_behavior: Optional[str] = None
+    validation_criteria: Optional[List[str]] = None
+    expected_changes: Optional[str] = None
+    file_content: Optional[str] = None
+    expected_content: Optional[str] = None
+    command_output: Optional[str] = None
+    # file tools
+    content: Optional[str] = None
+    mode: Optional[int] = None
+    # copy_template
+    template_path: Optional[str] = None
+    destination_path: Optional[str] = None
+    replacements: Optional[Dict[str, str]] = None
+    # rollback_commits
+    num_commits: Optional[int] = None
 
 class PlanStep(BaseModel):
     description: str
@@ -92,7 +129,12 @@ class AgentGraphState(TypedDict):
     plan_creator_response: Annotated[list, add_messages]
     replanning_response: Annotated[list, add_messages]
     devops_agent_response: Annotated[list, add_messages]
+    tools_router_response: Annotated[list, add_messages]
+    documentation_agent_response: Annotated[list, add_messages]
 
+    needs_documentation: bool  # Changed from Optional to required
+    documentation_query: Optional[str]
+    retrieved_documentation: List[Dict[str, str]]  # Changed from Optional to required
 
     memory_agent_response: Annotated[list, add_messages]
     memory_context: Optional[MemoryContext] = None
@@ -166,6 +208,7 @@ state = {
     "pinecone_index": None,
     "embeddings_model": None,
 
+    
     "messages": [],
     "question_generator_response": [],
     "plan_creator_response": [],

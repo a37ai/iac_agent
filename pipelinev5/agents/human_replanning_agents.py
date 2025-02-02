@@ -1,14 +1,13 @@
 import json
-from typing import TypedDict, Annotated, Dict
 from termcolor import colored
 from langchain_core.messages import SystemMessage
 from ai_models.openai_models import get_open_ai_json
-from states.state import AgentGraphState, EditRequest
+from states.state import AgentGraphState
 from prompts.replanning_prompts import replanning_prompt_template
 from utils.general_helper_functions import check_for_content
 from agent_tools.human_replanning_tools import get_edit_request_from_cli
 
-def replanning_agent(state: AgentGraphState, prompt=replanning_prompt_template, model=None, server=None, feedback=None):
+def replanning_agent(state: AgentGraphState, prompt=replanning_prompt_template, model=None, server=None, feedback=None, os=None):
     """Create an updated plan based on the edit request."""
     feedback_value = feedback() if callable(feedback) else feedback
     feedback_value = check_for_content(feedback_value)
@@ -38,7 +37,8 @@ def replanning_agent(state: AgentGraphState, prompt=replanning_prompt_template, 
             original_plan=json.dumps(current_plan, indent=2),
             codebase_overview=state.get("codebase_overview", ""),
             file_tree=state.get("file_tree", ""),
-            file_analyses=json.dumps(state.get("file_analyses", {}), indent=2)
+            file_analyses=json.dumps(state.get("file_analyses", {}), indent=2),
+            os=os
         )
 
         messages = [

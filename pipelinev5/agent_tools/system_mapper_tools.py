@@ -11,8 +11,10 @@ from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
 import time
 from utils.general_helper_functions import configure_logger, load_config
-from prompts.system_mapper_prompts import ANALYZE_FILE_TEMPLATE, GENERATE_OVERVIEW_TEMPLATE
+from prompts.system_mapper_prompts import ANALYZE_FILE_TEMPLATE, GENERATE_OVERVIEW_TEMPLATE, ANALYZE_FILE_TEMPLATE_GEMINI
 from ai_models.openai_models import get_open_ai
+from ai_models.gemini_models import GeminiJSONModel
+from agent_tools.token_tools import TokenCounter
 
 logger = configure_logger(__name__)
 
@@ -144,6 +146,111 @@ class SystemMapper:
         
         logger.info("Repository cloning completed")
 
+    # def _clone_single_repo(self, repo_url: str, path: Path) -> None:
+    #     logger.info(f"Checking repository: {repo_url}")
+        
+    #     try:
+    #         # If directory exists, assume it's already cloned
+    #         if path.exists():
+    #             logger.info(f"Repository already exists at {path}, skipping clone")
+    #             return
+                
+    #         if self.git_token:
+    #             _, _, _, owner, repo_name = repo_url.rstrip('.git').split('/')
+    #             auth_url = f"https://{self.git_token}@github.com/{owner}/{repo_name}.git"
+    #         else:
+    #             auth_url = repo_url
+            
+    #         path.parent.mkdir(parents=True, exist_ok=True)
+    #         logger.info(f"Cloning repository to: {path}")
+            
+    #         # Try main branch first, then master
+    #         for branch in ['main', 'master']:
+    #             try:
+    #                 repo = git.Repo.clone_from(
+    #                     auth_url,
+    #                     path,
+    #                     branch=branch,
+    #                     depth=1
+    #                 )
+    #                 with repo.config_writer() as git_config:
+    #                     git_config.set_value('user', 'name', 'forge-bot')
+    #                     git_config.set_value('user', 'email', 'forge-bot@example.com')
+    #                 logger.info(f"Repository cloned successfully using branch: {branch}")
+    #                 return
+    #             except git.exc.GitCommandError:
+    #                 if branch == 'master':
+    #                     raise
+    #                 logger.warning(f"Failed to clone branch {branch}, trying next branch")
+    #                 if path.exists():
+    #                     shutil.rmtree(path)
+                        
+    #     except Exception as e:
+    #         logger.error(f"Error cloning repository: {str(e)}")
+    #         raise
+
+    # def _clone_single_repo(self, repo_url: str, path: Path) -> None:
+    #     logger.info(f"Cloning repository: {repo_url}")
+        
+    #     try:
+    #         if self.git_token:
+    #             _, _, _, owner, repo_name = repo_url.rstrip('.git').split('/')
+    #             auth_url = f"https://{self.git_token}@github.com/{owner}/{repo_name}.git"
+    #         else:
+    #             auth_url = repo_url
+
+    #         # Check memory context for repo matching
+    #         past_repo = self.memory_context.past_repo_url if self.memory_context else None
+            
+    #         if past_repo == repo_url and path.exists():
+    #             try:
+    #                 repo = git.Repo(path)
+    #                 logger.info(f"Existing repository found at {path}, attempting update...")
+    #                 repo.remotes.origin.fetch()
+    #                 repo.git.reset('--hard', f'origin/{self.repo_branch}')
+                    
+    #                 with repo.config_writer() as git_config:
+    #                     git_config.set_value('user', 'name', 'forge-bot')
+    #                     git_config.set_value('user', 'email', 'forge-bot@example.com')
+                    
+    #                 logger.info("Repository updated successfully")
+    #                 return
+    #             except Exception as e:
+    #                 logger.warning(f"Failed to update repository: {str(e)}")
+    #                 logger.info("Attempting fresh clone...")
+    #                 shutil.rmtree(path)
+    #         elif path.exists():
+    #             logger.info("Different repository detected, removing existing and cloning fresh")
+    #             shutil.rmtree(path)
+            
+    #         path.parent.mkdir(parents=True, exist_ok=True)
+    #         logger.info(f"Cloning repository to: {path}")
+            
+    #         # Try main branch first, then master
+    #         for branch in ['main', 'master']:
+    #             try:
+    #                 repo = git.Repo.clone_from(
+    #                     auth_url,
+    #                     path,
+    #                     branch=branch,
+    #                     depth=1
+    #                 )
+    #                 with repo.config_writer() as git_config:
+    #                     git_config.set_value('user', 'name', 'forge-bot')
+    #                     git_config.set_value('user', 'email', 'forge-bot@example.com')
+    #                 logger.info(f"Repository cloned successfully using branch: {branch}")
+    #                 return
+    #             except git.exc.GitCommandError:
+    #                 if branch == 'master':
+    #                     raise
+    #                 logger.warning(f"Failed to clone branch {branch}, trying next branch")
+    #                 if path.exists():
+    #                     shutil.rmtree(path)
+                        
+    #     except Exception as e:
+    #         logger.error(f"Error cloning repository: {str(e)}")
+    #         raise
+
     def _clone_single_repo(self, repo_url: str, path: Path) -> None:
         logger.info(f"Cloning repository: {repo_url}")
         
@@ -269,7 +376,6 @@ class SystemMapper:
     def collect_files_to_analyze(self) -> List[str]:
         """Collect all relevant files for analysis."""
         logger.info("Collecting files for analysis")
-        MAX_FILE_SIZE = 50000  # 50KB
         files_to_analyze = []
         
         exclude_patterns = {
@@ -311,15 +417,6 @@ class SystemMapper:
                     continue
                 
                 file_path = os.path.join(root, file)
-                
-                # Skip large files
-                try:
-                    if os.path.getsize(file_path) > MAX_FILE_SIZE:
-                        logger.warning(f"Skipping large file: {file_path}")
-                        continue
-                except OSError:
-                    continue
-                
                 files_to_analyze.append(file_path)
                 logger.info(f"Added file for analysis: {file_path}")
         
@@ -363,40 +460,63 @@ class SystemMapper:
             return 'Documentation'
         
         return f'Generic {ext} file'
-
-    def analyze_file(self, file_path: str, content: str) -> FileAnalysis:
-        """Analyze a single file using GPT-4."""
+    
+    def analyze_file(self, file_path: str, content: str, llm=None) -> FileAnalysis:
+        """Analyze a single file using appropriate model based on token count."""
         file_type = self._determine_file_type(Path(file_path))
         logger.info(f"Analyzing file: {file_path}")
         
-        # Limit content length
-        MAX_CONTENT_LENGTH = 8000
-        if len(content) > MAX_CONTENT_LENGTH:
-            content = content[:MAX_CONTENT_LENGTH] + "..."
-        
-        prompt = PromptTemplate(
-            input_variables=["file_name", "file_type", "content"],
-            template=ANALYZE_FILE_TEMPLATE
-        )
+        token_counter = TokenCounter()
+        token_count = token_counter.count_tokens(content)
 
         try:
-            response = self.llm.with_structured_output(FileAnalysis).invoke(
-                prompt.format(
-                    file_name=os.path.basename(file_path),
-                    file_type=file_type,
-                    content=content
+            # if token_count <= 200:
+            #     logger.info(f"Using GPT-4 mini model for tiny file ({token_count} tokens)")
+            #     llm = get_open_ai(temperature=0.3, model="gpt-4o-mini")
+            #     prompt = PromptTemplate(
+            #         input_variables=["file_name", "file_type", "content"],
+            #         template=ANALYZE_FILE_TEMPLATE
+            #     )
+            #     response = llm.with_structured_output(FileAnalysis).invoke(
+            #         prompt.format(
+            #             file_name=os.path.basename(file_path),
+            #             file_type=file_type,
+            #             content=content
+            #         )
+            #     )
+            #     return response
+            if token_count > 128000:
+                logger.info(f"Using Gemini model for large file ({token_count} tokens)")
+                gemini_model = GeminiJSONModel(temperature=0.3, model="gemini-1.5-pro")
+                prompt = PromptTemplate(
+                    input_variables=["file_name", "file_type", "content"],
+                    template=ANALYZE_FILE_TEMPLATE_GEMINI
                 )
-            )
-            
-            # Clean up response by removing duplicates
-            if hasattr(response, 'patterns'):
-                response.patterns = list(set(response.patterns))
-            if hasattr(response, 'dependencies'):
-                response.dependencies = list(set(response.dependencies))
-            
-            logger.info(f"Successfully analyzed {file_path}")
-            return response
-                
+                response = gemini_model.invoke([
+                    {"role": "system", "content": "You are a senior software architect and DevOps expert."},
+                    {"role": "user", "content": prompt.format(
+                        file_name=os.path.basename(file_path),
+                        file_type=file_type,
+                        content=content
+                    )}
+                ])
+                response_dict = json.loads(response.content)
+                return FileAnalysis(**response_dict)
+            else:
+                logger.info(f"Using GPT-4 model ({token_count} tokens)")
+                prompt = PromptTemplate(
+                    input_variables=["file_name", "file_type", "content"],
+                    template=ANALYZE_FILE_TEMPLATE
+                )
+                response = self.llm.with_structured_output(FileAnalysis).invoke(
+                    prompt.format(
+                        file_name=os.path.basename(file_path),
+                        file_type=file_type,
+                        content=content
+                    )
+                )
+                return response
+                    
         except Exception as e:
             logger.error(f"Error analyzing file {file_path}: {str(e)}")
             return FileAnalysis(

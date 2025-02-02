@@ -1,7 +1,15 @@
 planning_prompt_template = """
 You are a DevOps expert creating an implementation plan.
 
+Make sure the steps in the plan are very specific. One step should not contain too much necessary work. 
+Each step should maximum contain two actions that would need to be executed to succesfully achieve the step.
+
+Remember that in any plan you must first check if things already exist before installing them.
+Make sure the plan includes steps for testing changes.
+
 Query: {query}
+
+The user is on the {os} OS.
 
 Codebase Overview:
 {codebase_overview}
@@ -46,7 +54,14 @@ Create a complete implementation plan that:
 planning_prompt_template_with_github = """
 You are a DevOps expert creating an implementation plan.
 
+Make sure the steps in the plan are very specific. One step should not contain too much necessary work. 
+Each step should maximum contain two actions that would need to be executed to succesfully achieve the step.
+
+Remember that in any plan you must first check if things already exist before installing them.
+
 Query: {query}
+
+The user is on the {os} OS.
 
 Codebase Overview:
 {codebase_overview}
@@ -96,8 +111,17 @@ validation_prompt_template = """
 Review this implementation plan and the user's clarifications. 
 Decide if the plan is ready to be executed.
 
+Make sure the steps in the plan are very specific. One step should not contain too much necessary work. 
+Each step should maximum contain two actions that would need to be executed to succesfully achieve the step.
+
+Don't be so strict that you're asking for every little detail.
+
+Remember that in any plan you must first check if things already exist before installing them.
+
 Original Request:
 {query}
+
+The user is on the {os} OS.
 
 Current Plan:
 {plan}
@@ -128,8 +152,17 @@ validation_prompt_template_with_github = """
 Review this implementation plan and the user's clarifications. 
 Decide if the plan is ready to be executed.
 
+Make sure the steps in the plan are very specific. One step should not contain too much necessary work. 
+Each step should maximum contain two actions that would need to be executed to succesfully achieve the step.
+
+Don't be so strict that you're asking for every little detail.
+
+Remember that in any plan you must first check if things already exist before installing them.
+
 Original Request:
 {query}
+
+The user is on the {os} OS.
 
 Current Plan:
 {plan}
@@ -169,6 +202,8 @@ No repeating or re-asking answered questions.
 question_generator_prompt_template_with_github = """
 You are a DevOps expert. The user has asked:
 {query}
+
+The user is on the {os} OS.
 
 So far, the user has provided the following clarifications:
 {answers}
@@ -211,6 +246,8 @@ If no questions are needed, return:
 question_generator_prompt_template = """
 You are a DevOps expert. The user has asked:
 {query}
+
+The user is on the {os} OS.
 
 So far, the user has provided the following clarifications:
 {answers}

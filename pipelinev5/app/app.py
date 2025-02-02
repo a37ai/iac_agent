@@ -1,5 +1,3 @@
-# pipelinev5/app/pipeline.py
-
 from pathlib import Path
 import os
 import git
@@ -23,7 +21,8 @@ server = 'openai'
 model = 'gpt-4o'
 deepseek_model = 'deepseek-chat'
 model_endpoint = None
-iterations = 100
+iterations = 200
+
 
 class Pipeline:
     def __init__(self, repo_path: str):
@@ -104,7 +103,8 @@ class Pipeline:
                 deepseek_model=deepseek_model,
                 model_endpoint=model_endpoint,
                 query=query,
-                repo_path=str(self.test_repos_path)
+                repo_path=str(self.test_repos_path),
+                os="Mac"
             )
             
             workflow = compile_workflow(graph)
@@ -136,6 +136,47 @@ class Pipeline:
             logger.error(f"Workflow execution failed: {str(e)}")
             raise
 
+# def main():
+#     # Load environment variables
+#     load_dotenv()
+
+#     # Get repo path from environment
+#     repo_path = os.getenv('LOCAL_CLONE_PATH')
+#     if not repo_path:
+#         print(colored("Error: LOCAL_CLONE_PATH environment variable not set", 'red'))
+#         sys.exit(1)
+
+#     # Initialize pipeline
+#     print(colored("\n=== Initializing Pipeline ===", 'blue'))
+#     pipeline = Pipeline(repo_path)
+
+#     while True:
+#         try:
+#             # Get user query
+#             print(colored("\nEnter your infrastructure request (or 'exit' to quit):", 'cyan'))
+#             query = input("> ").strip()
+
+#             if query.lower() == 'exit':
+#                 break
+#             if not query:
+#                 print(colored("Please provide a query", 'yellow'))
+#                 continue
+
+#             # Run workflow
+#             result = pipeline.run_workflow(query)
+            
+#             # Display final status
+#             if result.get("final_state", {}).get("completed_steps"):
+#                 steps = len(result["final_state"]["completed_steps"])
+#                 print(colored(f"\nCompleted {steps} steps successfully", 'green'))
+            
+#         except KeyboardInterrupt:
+#             print(colored("\nOperation cancelled by user", 'yellow'))
+#             break
+#         except Exception as e:
+#             print(colored(f"\nError: {str(e)}", 'red'))
+#             logger.error(f"Error in main loop: {str(e)}")
+
 def main():
     # Load environment variables
     load_dotenv()
@@ -150,32 +191,28 @@ def main():
     print(colored("\n=== Initializing Pipeline ===", 'blue'))
     pipeline = Pipeline(repo_path)
 
-    while True:
-        try:
-            # Get user query
-            print(colored("\nEnter your infrastructure request (or 'exit' to quit):", 'cyan'))
-            query = input("> ").strip()
+    try:
+        # Get a single user query (no while loop)
+        print(colored("\nEnter your infrastructure request:", 'cyan'))
+        query = input("> ").strip()
 
-            if query.lower() == 'exit':
-                break
-            if not query:
-                print(colored("Please provide a query", 'yellow'))
-                continue
+        if not query:
+            print(colored("Please provide a query", 'yellow'))
+            sys.exit(1)
 
-            # Run workflow
-            result = pipeline.run_workflow(query)
+        # Run workflow once
+        result = pipeline.run_workflow(query)
             
-            # Display final status
-            if result.get("final_state", {}).get("completed_steps"):
-                steps = len(result["final_state"]["completed_steps"])
-                print(colored(f"\nCompleted {steps} steps successfully", 'green'))
+        # Display final status
+        if result.get("final_state", {}).get("completed_steps"):
+            steps = len(result["final_state"]["completed_steps"])
+            print(colored(f"\nCompleted {steps} steps successfully", 'green'))
             
-        except KeyboardInterrupt:
-            print(colored("\nOperation cancelled by user", 'yellow'))
-            break
-        except Exception as e:
-            print(colored(f"\nError: {str(e)}", 'red'))
-            logger.error(f"Error in main loop: {str(e)}")
+    except KeyboardInterrupt:
+        print(colored("\nOperation cancelled by user", 'yellow'))
+    except Exception as e:
+        print(colored(f"\nError: {str(e)}", 'red'))
+        logger.error(f"Error in main loop: {str(e)}")
 
 if __name__ == "__main__":
     main()

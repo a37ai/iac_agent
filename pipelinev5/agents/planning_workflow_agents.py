@@ -1,11 +1,11 @@
 import json
 from typing import TypedDict, Annotated
 from termcolor import colored
-from langchain_core.messages import SystemMessage, HumanMessage
-from ai_models.openai_models import get_open_ai_json
+from langchain_core.messages import SystemMessage
+from ai_models.openai_models import get_open_ai_json, get_open_ai_json_v2
+from ai_models.cerebras_models import get_cerebras_json
+from ai_models.deepseek_models import get_deepseek_groq_json
 from states.state import AgentGraphState, Question, ValidationResult, PlanStep
-from utils.general_helper_functions import check_for_content
-from utils.plan_manager import save_plan
 from prompts.planning_prompts import (
     validation_prompt_template,
     validation_prompt_template_with_github,
@@ -17,7 +17,7 @@ from prompts.planning_prompts import (
     QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT
 )
 
-def question_generator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None):
+def question_generator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """
     Generate clarifying questions from the LLM about the request/codebase.
     Only produces new questions if absolutely necessary and avoids re-asking answered questions.
@@ -34,7 +34,8 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
             "query": state["query"],
             "answers": state["answers"],
             "codebase_overview": state["codebase_overview"],
-            "github_info": state.get("github_info", "No GitHub information available")
+            "github_info": state.get("github_info", "No GitHub information available"),
+            "os": os
         }
 
         # Handle validation context if present
@@ -60,13 +61,15 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
                     base_prompt=prompt,
                     issues_context=issues_context,
                     github_info=state["github_info"],
-                    missing_info=json.dumps(missing_info, indent=2)
+                    missing_info=json.dumps(missing_info, indent=2),
+                    os=os
                 )
             else:
                 user_prompt = QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT.format(
                     base_prompt=prompt,
                     issues_context=issues_context,
-                    missing_info=json.dumps(missing_info, indent=2)
+                    missing_info=json.dumps(missing_info, indent=2),
+                    os=os
                 )
         else:
             user_prompt = prompt.format(**input_data)
@@ -77,7 +80,9 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
         ]
 
         if server == 'openai':
-            llm = get_open_ai_json(model=model, temperature=0.1)
+            # llm = get_open_ai_json(model=model, temperature=0.1)
+            llm = get_open_ai_json(model=model)
+
         
         ai_msg = llm.invoke(messages)
         response = ai_msg.content
@@ -118,7 +123,7 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
         state["question_generator_response"].append(SystemMessage(content=error_msg))
         return state
 
-def plan_creator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None):
+def plan_creator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """Create an implementation plan based on the user query and answers."""
     try:
         # Select appropriate prompt based on GitHub info presence
@@ -138,13 +143,15 @@ Please revise the plan to fix these issues.
 """
         else:
             validation_feedback = "No validation issues to address."
-
-        file_analyses = (
-            state.get("file_analyses_compressed", {}) 
-            if state.get("compression_decision", {}).get("compress") 
-            else state.get("file_analyses", {})
-        )
         
+        # print("Compression decision:", state.get("compression_decision"))
+        # print("File analyses:", state.get("file_analyses"))
+        # print("Compressed analyses:", state.get("file_analyses_compressed"))
+
+        file_analyses = state["file_analyses"]
+        if state.get("compression_decision") and state["compression_decision"].get("compress"):
+            file_analyses = state["file_analyses_compressed"]
+
         # Format context for LLM
         plan_context = {
             "query": state["query"],
@@ -153,7 +160,8 @@ Please revise the plan to fix these issues.
             "file_analyses": file_analyses,  # Using potentially compressed analyses
             "answers": state.get("answers", {}),
             "github_info": state.get("github_info", ""),
-            "validation_feedback": validation_feedback
+            "validation_feedback": validation_feedback,
+            "os": os
         }
 
         messages = [
@@ -162,8 +170,13 @@ Please revise the plan to fix these issues.
         ]
 
         if server == 'openai':
-            llm = get_open_ai_json(model=model)
+            # llm = get_deepseek_groq_json()
+            # llm = get_open_ai_json_v2()
+            llm = get_cerebras_json()
+
         
+        # print("Messages being sent to Cerebras:")
+        # print(json.dumps(messages, indent=2))
         ai_msg = llm.invoke(messages)
         response = ai_msg.content
         
@@ -190,7 +203,7 @@ Please revise the plan to fix these issues.
         state["plan_creator_response"].append(SystemMessage(content=error_msg))
         return state
 
-def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None):
+def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """Validate the implementation plan."""
     try:
         # Select appropriate prompt based on GitHub info presence
@@ -207,7 +220,8 @@ def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server
             "answers": state["answers"],
             "answered_questions": list(state["answered_questions"]),
             "validation_context": state["validation_context"].dict() if state["validation_context"] else {},
-            "github_info": state.get("github_info", "")
+            "github_info": state.get("github_info", ""),
+            "os": os
         }
 
         # Format validation input
@@ -215,7 +229,8 @@ def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server
             "query": state["query"],
             "plan": json.dumps(plan_steps, indent=2),
             "context": json.dumps(context, indent=2),
-            "github_info": state.get("github_info", "No GitHub information available")
+            "github_info": state.get("github_info", "No GitHub information available"),
+            "os": os
         }
 
         messages = [
@@ -224,7 +239,9 @@ def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server
         ]
 
         if server == 'openai':
-            llm = get_open_ai_json(model=model)
+            # llm = get_open_ai_json(model=model)
+            llm = get_cerebras_json()
+
         
         ai_msg = llm.invoke(messages)
         response = ai_msg.content

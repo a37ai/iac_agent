@@ -1,7 +1,5 @@
 # prompts/system_mapper_prompts.py
 
-from langchain_core.prompts import PromptTemplate
-
 # Prompt template for analyzing a single file
 ANALYZE_FILE_TEMPLATE = """You are a senior software architect and DevOps expert analyzing source code files.
 Analyze the file and provide structured information about its purpose, components, and DevOps relevance.
@@ -17,6 +15,33 @@ Focus on:
 3. Important patterns and decisions
 4. DevOps relevance in each category
 5. External dependencies and integrations"""
+
+ANALYZE_FILE_TEMPLATE_GEMINI = """You are a senior software architect and DevOps expert analyzing source code files.
+Analyze the file and provide structured information about its purpose, components, and DevOps relevance.
+
+Files to analyze:
+File Name: {file_name}
+Type: {file_type}
+Content: {content}
+
+Always fill out the json template 100 percent and make sure to include all the required fields.
+Fill out everything, but specifically always fill out the devops relevance components, no matter what.
+
+You must analyze this file and return a JSON object with this exact schema, focusing on DevOps and infrastructure aspects:
+{{
+    "main_purpose": "string describing the file's core purpose",
+    "key_components": ["list of major functions/classes/sections"],
+    "patterns": ["list of important design patterns, architecture decisions"],
+    "devops_relevance": {{
+        "configuration": "Configuration management relevance or None",
+        "infrastructure": "Infrastructure automation relevance or None",
+        "pipeline": "CI/CD pipeline relevance or None",
+        "security": "Security implications or None",
+        "monitoring": "Monitoring/observability relevance or None"
+    }},
+    "dependencies": ["list of external dependencies and integrations"]
+}}
+"""
 
 # Prompt template for generating repository overview
 GENERATE_OVERVIEW_TEMPLATE = """You are a senior software architect and DevOps expert analyzing an entire codebase.
