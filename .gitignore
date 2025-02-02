@@ -30,3 +30,4 @@ environment_droplet.yml
 forge/
 pipelinev4/
 pipelinev5/config/config.yaml
+pipelinev5/test_repos/
