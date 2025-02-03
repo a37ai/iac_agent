@@ -1,6 +1,7 @@
 import os
 from supabase import create_client, Client
 import traceback
+from termcolor import colored
 
 class Supabase:
     def __init__(self, access_token: str = None, refresh_token: str = None, user_auth=False):
@@ -78,6 +79,8 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
+        if not project_id or project_id == "None":
+            raise ValueError("A valid project_id must be provided")
         try:
             integration_column = f"{integration_name}_raw"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
@@ -105,6 +108,10 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
+        if not project_id or project_id == "None":
+            raise ValueError("A valid project_id must be provided")
+        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
+        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
         try:
             integration_column = f"{integration_name}_summary"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()

@@ -80,6 +80,9 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
+        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
+        if not project_id or project_id == "None":
+            raise ValueError("A valid project_id must be provided")
         try:
             integration_column = f"{integration_name}_raw"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
@@ -107,6 +110,10 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
+        if not project_id or project_id == "None":
+            raise ValueError("A valid project_id must be provided")
+        
+        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
         try:
             integration_column = f"{integration_name}_summary"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
@@ -163,7 +170,7 @@ def tool_info_agent(
     If so, it calls our inline `integration_info` function to retrieve a summary from Supabase,
     then saves that summary in `state["integration_info"]`.
     """
-    
+    colored(state, "blue") 
     # Track agent responses
     if "tool_info_agent_response" not in state:
         state["tool_info_agent_response"] = []
@@ -201,11 +208,15 @@ def tool_info_agent(
     # 2) If tool_name is known, retrieve the integration summary
     if tool_name in all_tools:
         print(colored(f"\nRetrieving integration info for {tool_name}...", 'yellow'))
+        print(user_query)
+        print(tool_name)
+        print(state.get("project_id"))
         summary = integration_info(
             query=user_query,
             integration_name=tool_name,
             project_id=state.get("project_id")
         )
+        print(colored(summary, 'yellow'))
         print(colored("Integration info retrieved successfully ✅", 'green'))
     else:
         summary = "No recognized integration found in the user query."

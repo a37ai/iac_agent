@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import json
 import pinecone
+import os
 from langchain_openai import OpenAIEmbeddings
 
 
@@ -173,6 +174,7 @@ class AgentGraphState(TypedDict):
     github_repo: Optional[str]
     needs_github: bool
     github_focus: List[str]
+    project_id: Optional[str]
 
     compression_agent_response: Annotated[list, add_messages]
     compression_decision: Optional[Dict[str, Any]] = None
@@ -249,6 +251,6 @@ state = {
     "compression_agent_response": [],
     "compression_decision": None,
     "file_analyses_compressed": None,
-    "project_id": "",
+    "project_id": os.getenv("MADHAVAN_PROJECT_ID"),
     "integrations_info": None   
 }
