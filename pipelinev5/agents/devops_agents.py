@@ -17,6 +17,134 @@ from agent_tools.devops_tools import (
     DevOpsTools
 )
 
+#######################################################################
+# Supabase Client, can remove and import when move to django
+#######################################################################
+
+import os
+from supabase import create_client, Client
+import traceback
+
+class Supabase:
+    def __init__(self, access_token: str = None, refresh_token: str = None, user_auth=False):
+        url: str = os.getenv("SUPABASE_URL", "")
+        key: str = os.getenv("SUPABASE_KEY", "")
+        
+        if not url or not key:
+            raise ValueError("Supabase URL or Key is not set in the environment variables.")
+
+        try:    
+            self.supabase: Client = create_client(url, key)
+            if user_auth:
+                # Optionally set session details if required
+                self.supabase.auth.set_session(access_token=access_token, refresh_token=refresh_token)
+                pass
+        except Exception as e:
+            traceback.print_exc()
+            raise ValueError(f"Failed to initialize Supabase client: {str(e)}")
+        
+    def get_project_data(self, project_id: str):
+        response = self.supabase.table("projects").select("*").eq("id", project_id).execute()
+        data = response.data
+        if not data:
+            raise ValueError(f"No project data found for project {project_id}")
+        if type(data) is list:
+            return data[0]
+        elif type(data) is dict:
+            return data
+        else:
+            raise ValueError(f"Unexpected data type: {type(data)}")
+
+    def set_aws_credentials(access_token: str = "", refresh_token: str = "", project_id: str = ""):
+        # Retrieve variables from .env
+        url: str = os.getenv("SUPABASE_URL") 
+        key: str = os.getenv("SUPABASE_KEY")
+
+        if not url or not key:
+            raise ValueError("Supabase URL or Key is not set in the environment variables.")
+
+        try:
+            supabase: Client = create_client(url, key)
+            supabase.auth.set_session(access_token=access_token, refresh_token=refresh_token)
+            
+            # Execute the query
+            response = supabase.table("projects").select("aws_access_key_id, aws_secret_access_key").eq("id", project_id).execute()
+            
+            if not response.data:
+                raise ValueError(f"No AWS credentials found for project {project_id}")
+                
+            return response
+            
+        except Exception as e:
+            raise ValueError(f"Failed to retrieve AWS credentials: {str(e)}")
+
+    def update_project_data(self, project_id: str, codebase_understanding: dict) -> None:
+        """Update project's codebase understanding in Supabase."""
+        try:
+            self.supabase.table("projects").update({
+                "codebase_understanding": codebase_understanding
+            }).eq("id", project_id).execute()
+        except Exception as e:
+            raise ValueError(f"Failed to update project data: {str(e)}")
+
+    def get_integration_raw_data(self, integration_name: str, project_id: str):
+        """
+        Get raw data for a specific integration from the projects table.
+        
+        Args:
+            integration_name: Name of the integration tool
+            project_id: ID of the project
+            
+        Returns:
+            Response object containing the data
+            
+        Raises:
+            ValueError: If the query fails or returns invalid data
+        """
+        try:
+            integration_column = f"{integration_name}_raw"
+            response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
+            response = response.data[0][integration_column]
+            if not response:
+                print(f"Failed to retrieve {integration_name} data")
+                return None
+                
+            return str(response)
+            
+        except Exception as e:
+            raise ValueError(f"Error retrieving integration data: {str(e)}")
+    
+    def get_integration_summarized_data(self, integration_name: str, project_id: str):
+        """
+        Get summarized data for a specific integration from the projects table.
+        
+        Args:
+            integration_name: Name of the integration tool
+            project_id: ID of the project
+            
+        Returns:
+            Response object containing the data
+            
+        Raises:
+            ValueError: If the query fails or returns invalid data
+        """
+        try:
+            integration_column = f"{integration_name}_summary"
+            response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
+            response = response.data[0][integration_column]
+            if not response:
+                print(f"No {integration_name} summary")
+                return None
+            
+            return str(response)
+            
+        except Exception as e:
+            raise ValueError(f"Error retrieving integration data: {str(e)}")
+
+#######################################################
+# End of Supabase Client
+#######################################################
+
 def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template, model=None, server=None, feedback=None, os=None) -> AgentGraphState:
     """
     Determine the next action for the current step in the DevOps workflow.
@@ -78,7 +206,8 @@ def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template
                 f"Query: {doc['query']}\nInformation:\n{doc['info']}\n"
                 for doc in state.get("retrieved_documentation", [])
             ) or "No relevant documentation retrieved.",
-            "os": os
+            "os": os,
+            "configured_integrations": Supabase.get_configured_integrations(state["project_id"]),
         }
         
         # Create the full system prompt by formatting the template with the context
@@ -223,6 +352,7 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
             "copy_template": "copy_template",
             "validate_command_output": "validate_command_output",
             "rollback_commits": "rollback_commits",
+            "retrieve_integration_info": "integration_info",
             "end": "end_step"
         }
         
@@ -312,6 +442,10 @@ def execute_tool(state: AgentGraphState) -> AgentGraphState:
             elif decision.type == "rollback_commits":
                 print(colored("\nPreparing commit rollback...", 'yellow'))
                 inputs["num_commits"] = int(decision.content) if decision.content else 1
+            elif decision.type == "retrieve_integration_info":
+                print(colored("\nPreparing integration information retrieval...", 'yellow'))
+                inputs["query"] = decision.content
+                inputs["integration_name"] = getattr(decision, "integration_name", decision.description)
                         
             # Execute tool with more detailed error handling
             print(colored("\nExecuting tool...", 'yellow'))
@@ -405,7 +539,8 @@ def _initialize_tools(state: AgentGraphState) -> DevOpsTools:
     if not state.get("tools"):
         tools = DevOpsTools(
             working_directory=state["current_directory"],
-            subprocess_handler=state["subprocess_handler"]
+            subprocess_handler=state["subprocess_handler"],
+            project_id=state["project_id"]
         )
         tools.set_forge(state["forge"])
         state["tools"] = tools

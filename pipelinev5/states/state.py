@@ -85,6 +85,7 @@ class LLMDecision(BaseModel):
     replacements: Optional[Dict[str, str]] = None
     # rollback_commits
     num_commits: Optional[int] = None
+    integration_name: Optional[str] = None
 
 class PlanStep(BaseModel):
     description: str
@@ -251,6 +252,6 @@ state = {
     "compression_agent_response": [],
     "compression_decision": None,
     "file_analyses_compressed": None,
-    "project_id": os.getenv("MADHAVAN_PROJECT_ID"),
+    "project_id": "89f1b2c5-c78b-426e-9567-62c8cac1c61e",
     "integrations_info": None   
 }

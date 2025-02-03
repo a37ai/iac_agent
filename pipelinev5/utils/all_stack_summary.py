@@ -79,17 +79,15 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
-        if not project_id or project_id == "None":
-            raise ValueError("A valid project_id must be provided")
         try:
             integration_column = f"{integration_name}_raw"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
-            
+            response = response.data[0][integration_column]
             if not response:
                 print(f"Failed to retrieve {integration_name} data")
                 return None
                 
-            return str(response.data)
+            return str(response)
             
         except Exception as e:
             raise ValueError(f"Error retrieving integration data: {str(e)}")
@@ -108,19 +106,15 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
-        if not project_id or project_id == "None":
-            raise ValueError("A valid project_id must be provided")
-        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
-        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
         try:
             integration_column = f"{integration_name}_summary"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
-            
-            if not response.data[0][integration_column]:
+            response = response.data[0][integration_column]
+            if not response:
                 print(f"No {integration_name} summary")
                 return None
             
-            return str(response.data[0][integration_column])
+            return str(response)
             
         except Exception as e:
             raise ValueError(f"Error retrieving integration data: {str(e)}")

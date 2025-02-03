@@ -84,6 +84,12 @@ rollback_commits:
 * Use this to roll back a specified number of commits when code changes need to be undone
 * num_commits specifies how many commits to roll back (e.g. 1 for most recent)
 
+retrieve_integration_info:
+- Required: query (str), integration_name (str)
+* Use this tool to retrieve and summarize integration-specific data (e.g., AWS, GitHub, Kubernetes, etc.) from your project. 
+* Here is a list of configured integrations you can pull from (if the list is empty, you shouldn't call this function): {configured_integrations}
+ 
+
 If you have no more actions to take, you may indicate type="end" and set content="", description="All tasks complete", etc.
 
 Really make sure to include all the required outputs in the JSON resonponse for each tool you choose.

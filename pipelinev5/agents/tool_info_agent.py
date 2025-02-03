@@ -1,5 +1,3 @@
-# tool_info_agent.py
-
 import os
 from supabase import create_client, Client
 import traceback
@@ -80,18 +78,15 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
-        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
-        if not project_id or project_id == "None":
-            raise ValueError("A valid project_id must be provided")
         try:
             integration_column = f"{integration_name}_raw"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
-            
+            response = response.data[0][integration_column]
             if not response:
                 print(f"Failed to retrieve {integration_name} data")
                 return None
                 
-            return str(response.data)
+            return str(response)
             
         except Exception as e:
             raise ValueError(f"Error retrieving integration data: {str(e)}")
@@ -110,19 +105,15 @@ class Supabase:
         Raises:
             ValueError: If the query fails or returns invalid data
         """
-        if not project_id or project_id == "None":
-            raise ValueError("A valid project_id must be provided")
-        
-        colored(f"Retrieving {project_id}'s {integration_name} summary", "green")
         try:
             integration_column = f"{integration_name}_summary"
             response = self.supabase.table("projects").select(integration_column).eq("id", project_id).execute()
-            
-            if not response.data[0][integration_column]:
+            response = response.data[0][integration_column]
+            if not response:
                 print(f"No {integration_name} summary")
                 return None
             
-            return str(response.data[0][integration_column])
+            return str(response)
             
         except Exception as e:
             raise ValueError(f"Error retrieving integration data: {str(e)}")
@@ -133,7 +124,7 @@ from termcolor import colored
 
 import google.generativeai as genai
 from langchain_core.messages import SystemMessage
-
+from utils.all_stack_summary import get_configured_integrations
 from states.state import AgentGraphState
 from ai_models.openai_models import get_open_ai_json
 from agent_tools.tool_info_agent_tool import integration_info
@@ -170,7 +161,7 @@ def tool_info_agent(
     If so, it calls our inline `integration_info` function to retrieve a summary from Supabase,
     then saves that summary in `state["integration_info"]`.
     """
-    colored(state, "blue") 
+    
     # Track agent responses
     if "tool_info_agent_response" not in state:
         state["tool_info_agent_response"] = []
@@ -178,11 +169,57 @@ def tool_info_agent(
     # Pull the user's query from state
     user_query = state.get("query", "").strip()
 
+    configured = get_configured_integrations(state.get("project_id", ""))
+
+    configured_artifactory = ""
+    configured_cicd = ""
+    configured_cloud = ""
+    configured_cm = ""
+    configured_container = ""
+    configured_networking = ""
+    configured_observability = ""
+    configured_orchestration = ""
+
+    for tool in configured:
+        if tool in artifactory_tools:
+            configured_artifactory += tool
+        elif tool in cicd_tools:
+            configured_cicd += tool
+        elif tool in cloud_tools:
+            configured_cloud += tool
+        elif tool in cm_tools:
+            configured_cm += tool
+        elif tool in container_tools:
+            configured_container += tool
+        elif tool in networking_tools:
+            configured_networking += tool
+        elif tool in observability_tools:
+            configured_observability += tool
+        elif tool in orchestration_tools:
+            configured_orchestration += tool
+
+    artifactory_prompt = "Artifactory (this will provide information about the user's artifact management tools)- " + configured_artifactory if configured_artifactory != "" else ""
+    cicd_prompt = "CI/CD (this will give information about the user's CI/CD pipeline)- " + configured_cicd if configured_cicd != "" else ""
+    cloud_prompt = "Cloud (this will provide details about the user's cloud providers and platforms)- " + configured_cloud if configured_cloud != "" else ""
+    cm_prompt = "Configuration Management (this will provide information about the user's configuration management tools)- " + configured_cm if configured_cm != "" else ""
+    container_prompt = "Container (this will inform about the user's container runtime environments and tools)- " + configured_container if configured_container != "" else ""
+    networking_prompt = "Network (this will give insights into the user's networking tools and services)- " + configured_networking if configured_networking != "" else ""
+    observability_prompt = "Observability (this will provide information about the user's observability, monitoring, and logging systems)- " + configured_observability if configured_observability != "" else ""
+    orchestration_prompt = "Orchestration (this will detail the user's container orchestration platforms and methodologies)- " + configured_orchestration if configured_orchestration != "" else ""
+
     # 1) Identify which tool (if any) is mentioned in the user query
     system_prompt = TOOL_INFO_PROMPT.format(
-        tools=", ".join(all_tools),
+        artifactory_tools=artifactory_prompt,
+        cicd_tools=cicd_prompt,
+        cloud_tools=cloud_prompt,
+        cm_tools=cm_prompt,
+        container_tools=container_prompt,
+        networking_tools=networking_prompt,
+        observability_tools=observability_prompt,
+        orchestration_tools=orchestration_prompt,
         query=user_query
     )
+    print(system_prompt)
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": "Identify the correct 'tool_name' from the user query."}
@@ -208,9 +245,7 @@ def tool_info_agent(
     # 2) If tool_name is known, retrieve the integration summary
     if tool_name in all_tools:
         print(colored(f"\nRetrieving integration info for {tool_name}...", 'yellow'))
-        print(user_query)
-        print(tool_name)
-        print(state.get("project_id"))
+
         summary = integration_info(
             query=user_query,
             integration_name=tool_name,
