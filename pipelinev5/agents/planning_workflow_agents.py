@@ -8,14 +8,12 @@ from ai_models.deepseek_models import get_deepseek_groq_json
 from states.state import AgentGraphState, Question, ValidationResult, PlanStep
 from prompts.planning_prompts import (
     validation_prompt_template,
-    validation_prompt_template_with_github,
     planning_prompt_template,
-    planning_prompt_template_with_github,
     question_generator_prompt_template,
-    question_generator_prompt_template_with_github,
-    QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT_WITH_GITHUB,
     QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT
 )
+from utils.all_stack_summary import get_configured_integrations
+
 
 def question_generator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """
@@ -23,54 +21,48 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
     Only produces new questions if absolutely necessary and avoids re-asking answered questions.
     """
     try:
-        # Select appropriate prompt based on GitHub info presence
-        if state.get("github_info"):
-            prompt = question_generator_prompt_template_with_github
-        else:
-            prompt = question_generator_prompt_template
-            
+        # Always use the unified question generator prompt
+        prompt = question_generator_prompt_template
+
+        # Compute the conditional strings for GitHub, Integration info, and DevOps Stack
+        github_info_str = f"\nGitHub Info:\n{state['github_info']}" if state.get("github_info") else ""
+        integrations_info_str = f"\nIntegration Information:\n{state['integrations_info']}" if state.get("integrations_info") else ""
+        devops_stack_list = get_configured_integrations(state.get("project_id"))
+        devops_stack_str = f"\nDevOps Stack:\n{devops_stack_list}" if devops_stack_list else ""
+
         # Build context from state
         input_data = {
             "query": state["query"],
             "answers": state["answers"],
             "codebase_overview": state["codebase_overview"],
-            "github_info": state.get("github_info", "No GitHub information available"),
+            "github_info": github_info_str,
+            "integrations_info": integrations_info_str,
+            "devops_stack": devops_stack_str,
             "os": os
         }
 
-        # Handle validation context if present
-        if (state["validation_result"] and 
-            state["validation_result"].status in ("needs_info", "has_issues")):
-            
+        # If validation indicates issues or missing info, add additional context.
+        if state.get("validation_result") and state["validation_result"].status in ("needs_info", "has_issues"):
             issues_context = ""
             if state["validation_result"].issue_explanation:
                 issues_context = f"Issues: {state['validation_result'].issue_explanation}"
 
-            # Handle missing_info if present
             missing_info = []
             if state["validation_result"].missing_info:
                 if isinstance(state["validation_result"].missing_info[0], dict):
-                    # If already dictionaries, use as is
                     missing_info = state["validation_result"].missing_info
                 else:
-                    # Convert Question objects to dictionaries
                     missing_info = [q.dict() for q in state["validation_result"].missing_info]
 
-            if state.get("github_info"):
-                user_prompt = QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT_WITH_GITHUB.format(
-                    base_prompt=prompt,
-                    issues_context=issues_context,
-                    github_info=state["github_info"],
-                    missing_info=json.dumps(missing_info, indent=2),
-                    os=os
-                )
-            else:
-                user_prompt = QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT.format(
-                    base_prompt=prompt,
-                    issues_context=issues_context,
-                    missing_info=json.dumps(missing_info, indent=2),
-                    os=os
-                )
+            user_prompt = QUESTION_WITH_ADDITIONAL_CONTEXT_PROMPT.format(
+                base_prompt=prompt,
+                issues_context=issues_context,
+                missing_info=json.dumps(missing_info, indent=2),
+                github_info=github_info_str,
+                integrations_info=integrations_info_str,
+                devops_stack=devops_stack_str,
+                os=os
+            )
         else:
             user_prompt = prompt.format(**input_data)
 
@@ -80,39 +72,34 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
         ]
 
         if server == 'openai':
-            # llm = get_open_ai_json(model=model, temperature=0.1)
             llm = get_open_ai_json(model=model)
 
-        
         ai_msg = llm.invoke(messages)
         response = ai_msg.content
-        
-        # Parse response and get questions
+
+        # Parse response and create Question objects
         response_data = json.loads(response)
-        
-        # Convert dictionaries to Question objects
         new_questions = [Question(**q) for q in response_data.get("questions", [])]
-        
-        # Get answers from user for each question
+
+        # Prompt the user for answers for each generated question
         for q in new_questions:
             print(colored(f"\nQuestion: {q.question}", 'cyan'))
             print(colored(f"Context: {q.context}", 'blue'))
             if q.default_answer:
                 print(colored(f"Default: {q.default_answer}", 'yellow'))
-            
+
             user_answer = input(colored("Your answer: ", 'green')).strip()
             if not user_answer and q.default_answer:
                 user_answer = q.default_answer
-            
+
             state["answers"][q.question] = user_answer
             state["answered_questions"].add(q.question)
-        
-        # Store questions as dictionaries in state
+
+        # Store questions as dictionaries in state and log the response
         state["questions"] = [q.dict() for q in new_questions]
         state["question_generator_response"].append(SystemMessage(content=response))
-        
+
         print(colored(f"Question Generator 🤔: Generated {len(new_questions)} questions", 'magenta'))
-        
         return state
 
     except Exception as e:
@@ -123,17 +110,14 @@ def question_generator_agent(state: AgentGraphState, prompt=None, model=None, se
         state["question_generator_response"].append(SystemMessage(content=error_msg))
         return state
 
+
 def plan_creator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """Create an implementation plan based on the user query and answers."""
     try:
-        # Select appropriate prompt based on GitHub info presence
-        if state.get("github_info"):
-            prompt = planning_prompt_template_with_github if prompt is None else prompt
-        else:
-            prompt = planning_prompt_template if prompt is None else prompt
+        # Always use the unified planning prompt
+        prompt = planning_prompt_template if prompt is None else prompt
 
-        # Prepare validation feedback
-        validation_feedback = ""
+        # Prepare validation feedback if applicable
         if state.get("validation_result") and state["validation_result"].status == "has_issues":
             validation_feedback = f"""
 Previous plan had the following issues that need to be addressed:
@@ -152,14 +136,22 @@ Please revise the plan to fix these issues.
         if state.get("compression_decision") and state["compression_decision"].get("compress"):
             file_analyses = state["file_analyses_compressed"]
 
-        # Format context for LLM
+        # Compute the conditional strings for GitHub, Integration info, and DevOps Stack
+        github_info_str = f"\nGitHub Info:\n{state['github_info']}" if state.get("github_info") else ""
+        integrations_info_str = f"\nIntegration Information:\n{state['integrations_info']}" if state.get("integrations_info") else ""
+        devops_stack_list = get_configured_integrations(state.get("project_id"))
+        devops_stack_str = f"\nDevOps Stack:\n{devops_stack_list}" if devops_stack_list else ""
+
+        # Format the context for the LLM
         plan_context = {
             "query": state["query"],
             "codebase_overview": state.get("codebase_overview", ""),
             "file_tree": state.get("file_tree", ""),
-            "file_analyses": file_analyses,  # Using potentially compressed analyses
+            "file_analyses": file_analyses,
             "answers": state.get("answers", {}),
-            "github_info": state.get("github_info", ""),
+            "github_info": github_info_str,
+            "integrations_info": integrations_info_str,
+            "devops_stack": devops_stack_str,
             "validation_feedback": validation_feedback,
             "os": os
         }
@@ -179,12 +171,12 @@ Please revise the plan to fix these issues.
         # print(json.dumps(messages, indent=2))
         ai_msg = llm.invoke(messages)
         response = ai_msg.content
-        
-        # Parse response and convert to PlanStep objects
+
+        # Parse the plan response and convert to PlanStep objects
         plan_data = json.loads(response)
         plan_steps = [PlanStep(**step) for step in plan_data.get("steps", [])]
-        
-        # Update state
+
+        # Update the state with the plan information
         state["plan"] = plan_steps
         state["plan_steps"] = plan_steps
         
@@ -194,7 +186,6 @@ Please revise the plan to fix these issues.
         
         print(colored(f"Plan Creator 📝: Generated plan with {len(plan_steps)} steps", 'magenta'))
         print(colored(f"Iteration: {state['iteration']}", 'blue'))
-        
         return state
 
     except Exception as e:
@@ -206,30 +197,36 @@ Please revise the plan to fix these issues.
 def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server=None, feedback=None, os=None):
     """Validate the implementation plan."""
     try:
-        # Select appropriate prompt based on GitHub info presence
-        if state.get("github_info"):
-            prompt = validation_prompt_template_with_github if prompt is None else prompt
-        else:
-            prompt = validation_prompt_template if prompt is None else prompt
+        # Always use the unified validation prompt
+        prompt = validation_prompt_template if prompt is None else prompt
 
-        # Convert PlanSteps to dictionaries for JSON serialization
+        # Convert PlanStep objects to dictionaries
         plan_steps = [step.to_dict() for step in state["plan"]]
-        
+
+        # Compute the conditional strings for GitHub, Integration info, and DevOps Stack
+        github_info_str = f"\nGitHub Info:\n{state['github_info']}" if state.get("github_info") else ""
+        integrations_info_str = f"\nIntegration Information:\n{state['integrations_info']}" if state.get("integrations_info") else ""
+        devops_stack_list = get_configured_integrations(state.get("project_id"))
+        devops_stack_str = f"\nDevOps Stack:\n{devops_stack_list}" if devops_stack_list!= [] else ""
+
         context = {
             "iteration": state["iteration"],
             "answers": state["answers"],
             "answered_questions": list(state["answered_questions"]),
             "validation_context": state["validation_context"].dict() if state["validation_context"] else {},
-            "github_info": state.get("github_info", ""),
+            "github_info": github_info_str,
+            "integrations_info": integrations_info_str,
+            "devops_stack": devops_stack_str,
             "os": os
         }
 
-        # Format validation input
         validation_input = {
             "query": state["query"],
             "plan": json.dumps(plan_steps, indent=2),
             "context": json.dumps(context, indent=2),
-            "github_info": state.get("github_info", "No GitHub information available"),
+            "github_info": github_info_str,
+            "integrations_info": integrations_info_str,
+            "devops_stack": devops_stack_str,
             "os": os
         }
 
@@ -239,8 +236,8 @@ def plan_validator_agent(state: AgentGraphState, prompt=None, model=None, server
         ]
 
         if server == 'openai':
-            # llm = get_open_ai_json(model=model)
-            llm = get_cerebras_json()
+            llm = get_open_ai_json(model=model)
+            # llm = get_cerebras_json()
 
         
         ai_msg = llm.invoke(messages)
@@ -290,7 +287,7 @@ def determine_next_planning_step(state: AgentGraphState) -> str:
         return "question_generator"
     else:
         return "plan_creator"
-    
+
 def end_node(state: AgentGraphState):
     """Clean up state before ending."""
     # Create a clean copy without message fields

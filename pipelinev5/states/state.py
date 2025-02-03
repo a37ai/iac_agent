@@ -248,6 +248,7 @@ state = {
 
     "compression_agent_response": [],
     "compression_decision": None,
-    "file_analyses_compressed": None
-    
+    "file_analyses_compressed": None,
+    "project_id": "",
+    "integrations_info": None   
 }

@@ -12,6 +12,7 @@ from agents.information_retrieval_agents import documentation_agent
 from agents.github_agents import github_agent
 from agents.memory_agents import memory_agent
 from agents.compression_agents import compression_agent
+from agents.tool_info_agent import tool_info_agent
 # from agents.large_file_analyzer_agents import large_file_analyzer_agent
 
 from prompts.planning_prompts import (
@@ -83,6 +84,15 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
             state=state,
             model=model,
             deepseek_model=deepseek_model,
+            server=server
+        )
+    )
+
+    graph.add_node(
+        "tool_info",
+        lambda state: tool_info_agent(
+            state=state,
+            model=model,
             server=server
         )
     )
@@ -172,7 +182,8 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
 
     graph.add_edge("memory", "system_mapper")
     graph.add_edge("system_mapper", "router")
-    graph.add_edge("github_agent", "question_generator")
+    graph.add_edge("github_agent", "tool_info")
+    graph.add_edge("tool_info", "question_generator")
     graph.add_edge("compression", "plan_creator")
     graph.add_edge("plan_creator", "plan_validator")
     graph.add_edge("documentation", "tools_router")
@@ -185,7 +196,7 @@ def create_graph(server=None, model=None, deepseek_model=None, stop=None, model_
         lambda state: (
             "github_agent" 
             if state.get("needs_github", False)
-            else "question_generator"
+            else "tool_info"
         )
     )
 
