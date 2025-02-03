@@ -17,6 +17,8 @@ from agent_tools.devops_tools import (
     DevOpsTools
 )
 from agent_tools.tool_info_agent_tool import Supabase
+from utils.all_stack_summary import get_configured_integrations
+
 
 def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template, model=None, server=None, feedback=None, os=None) -> AgentGraphState:
     """
@@ -80,7 +82,7 @@ def get_next_devops_action(state: AgentGraphState, prompt=devops_prompt_template
                 for doc in state.get("retrieved_documentation", [])
             ) or "No relevant documentation retrieved.",
             "os": os,
-            "configured_integrations": Supabase.get_configured_integrations(state["project_id"]),
+            "configured_integrations": get_configured_integrations(state["project_id"]),
         }
         
         # Create the full system prompt by formatting the template with the context
