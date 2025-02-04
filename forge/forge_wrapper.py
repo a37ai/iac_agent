@@ -197,7 +197,7 @@ class ForgeWrapper:
             
             # Check if files were edited
             if self.coder.forge_edited_files:
-                er = self._create_edit_result(response)
+                er = self._create_edit_result()
                 if not auto_apply:
                     new_contents = self.get_edited_files_content(er)
                     er.diff = self.generate_diffs(old_contents, new_contents)
