@@ -220,6 +220,7 @@ class ForgeWrapper:
     def _handle_edit_completion(self, old_contents: Optional[Dict[str, str]], auto_apply: bool) -> Optional[EditResult]:
         """Handle completion of an edit operation"""
         if not self.coder.forge_edited_files:
+            # print("No edits made")
             return None
             
         er = self._create_edit_result()
@@ -251,7 +252,7 @@ class ForgeWrapper:
             # Handle edits after streaming completes
             edit_result = self._handle_edit_completion(old_contents, auto_apply)
             if edit_result:
-                yield str(edit_result)
+                yield edit_result
                 
         except Exception as e:
             self.logger.error(f"Error during chat stream: {str(e)}")
