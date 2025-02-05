@@ -107,9 +107,10 @@ class ForgeWrapper:
         for file in edit_result.files_changed:
             normalized_path = self._normalize_path(file)
             try:
-                with open(file, 'r') as f:
+                with open(normalized_path, 'r') as f:
                     new_contents[normalized_path] = f.read()
             except FileNotFoundError:
+                print(f"File not found in get_edited_files_content: {normalized_path}")
                 new_contents[normalized_path] = ''
                 
             # try:
@@ -156,10 +157,7 @@ class ForgeWrapper:
                 else:
                     fromfile = f'a/{filename}'
                     
-                if filename not in new_contents:
-                    tofile = '/dev/null'  # Standard way to indicate deleted file
-                else:
-                    tofile = f'b/{filename}'
+                tofile = f'b/{filename}'
                 
                 diff = ''.join(difflib.unified_diff(
                     old,
@@ -186,7 +184,10 @@ class ForgeWrapper:
         
         try:
             if self.stream:
-                return "".join(self.chat_stream(message))
+                out = ""
+                for chunk in self.chat_stream(message):
+                    out += chunk if type(chunk) == str else ""
+                return out
             
             self.logger.debug(f"Sending message: {message}")
             old_contents = None
@@ -348,8 +349,14 @@ class ForgeWrapper:
         
     def _normalize_path(self, path: Union[str, Path]) -> str:
         """Normalize path to string format used in diffs"""
-        return str(Path(path).resolve())
-        
+        # for both types, this checks if path has self.coder.root in it - if so, add path to self.coder.root otherwise just use path as is
+        if type(path) == Path:
+            path = str(path)
+        if self.coder.root in path:
+            return str(Path(path).resolve())
+        else:
+            return os.path.join(self.coder.root, path)
+
     def apply_diffs(self, diffs: Dict[str, str]) -> EditResult:
         """
         Apply the specified diffs to the files.
