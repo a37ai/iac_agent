@@ -542,7 +542,7 @@ class ForgeWrapper:
         """
         print(f"Files in chat context: {self.get_files()}")
         print(f"ABS fnames{self.coder.abs_fnames}")
-        response = self.chat(message)
+        response = self.chat(message, mode="code")
         return self.get_clean_response(response)
 
     def get_file_contents(self, files: Optional[List[str]] = None) -> Dict[str, str]:
